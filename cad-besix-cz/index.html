@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BeSix CAD</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   BeSix CAD — CSS
+   Design: Industrial dark, matching board.besix.cz palette
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --bg: #1e2710;
+  --surface: #1a2a0e;
+  --surface2: rgba(255,255,255,0.07);
+  --surface3: rgba(255,255,255,0.11);
+  --border: rgba(255,255,255,0.1);
+  --border2: rgba(255,255,255,0.16);
+  --accent: #c9922a;
+  --accent2: #d4a035;
+  --text: rgba(255,255,255,0.88);
+  --text2: rgba(255,255,255,0.5);
+  --muted: rgba(255,255,255,0.3);
+  --danger: #ff3b30;
+  --green: #34c759;
+  --blue: #007aff;
+
+  --cad-bg: #1a1a2e;
+  --cad-grid: rgba(255,255,255,0.05);
+  --cad-grid-major: rgba(255,255,255,0.09);
+  --cad-snap: #00ff88;
+  --cad-crosshair: rgba(255,255,255,0.4);
+
+  --toolbar-bg: #0f1508;
+  --panel-bg: #151d0b;
+  --panel-w: 220px;
+  --toolbar-w: 44px;
+  --topbar-h: 40px;
+  --statusbar-h: 28px;
+
+  --layer-nosne: #ff4444;
+  --layer-pricky: #44cc44;
+  --layer-koty: #4488ff;
+  --layer-text: #ffffff;
+  --layer-srafy: #888888;
+  --layer-tzb: #cc44ff;
+  --layer-podklad: #555555;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg); color: var(--text);
+  overflow: hidden; height: 100vh; width: 100vw;
+  -webkit-font-smoothing: antialiased;
+  cursor: crosshair;
+}
+::selection { background: rgba(200,165,60,0.25); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+/* ─── LAYOUT ─── */
+#cadApp {
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr var(--statusbar-h);
+  grid-template-columns: var(--toolbar-w) 1fr var(--panel-w);
+  grid-template-areas:
+    "topbar topbar topbar"
+    "toolbar canvas panel"
+    "status status status";
+  height: 100vh; width: 100vw;
+}
+
+/* ─── TOP BAR ─── */
+#topBar {
+  grid-area: topbar;
+  display: flex; align-items: center; gap: 0;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+  z-index: 100;
+  user-select: none;
+}
+.top-logo {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 12px 0 4px;
+  font-weight: 800; font-size: 13px;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  border-right: 1px solid var(--border);
+  margin-right: 2px;
+  height: 100%;
+}
+.top-logo svg { width: 18px; height: 18px; }
+.top-logo span { font-weight: 400; color: var(--text2); font-size: 11px; margin-left: 2px; }
+
+/* Menu items */
+.menu-item {
+  position: relative;
+  padding: 0 12px; height: 100%;
+  display: flex; align-items: center;
+  font-size: 12px; font-weight: 500;
+  color: var(--text2); cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.menu-item:hover { color: var(--text); background: var(--surface2); }
+.menu-item.active { color: var(--accent); }
+
+.menu-dropdown {
+  display: none; position: absolute;
+  top: 100%; left: 0;
+  background: var(--toolbar-bg);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  min-width: 180px;
+  padding: 4px 0;
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.menu-dropdown.open { display: block; }
+.menu-dropdown-item {
+  padding: 7px 14px;
+  font-size: 12px; color: var(--text);
+  cursor: pointer; display: flex;
+  align-items: center; justify-content: space-between;
+  transition: background 0.1s;
+}
+.menu-dropdown-item:hover { background: var(--surface2); }
+.menu-dropdown-item .shortcut { color: var(--text2); font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+.menu-sep { height: 1px; background: var(--border); margin: 3px 8px; }
+
+.top-spacer { flex: 1; }
+.top-right {
+  display: flex; align-items: center; gap: 8px;
+  padding-right: 4px;
+}
+.top-user {
+  width: 26px; height: 26px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.top-user:hover { opacity: 0.8; }
+#syncDot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+
+/* ─── LEFT TOOLBAR ─── */
+#toolbar {
+  grid-area: toolbar;
+  display: flex; flex-direction: column;
+  gap: 1px;
+  background: var(--toolbar-bg);
+  border-right: 1px solid var(--border);
+  padding: 4px 0;
+  overflow-y: auto;
+  z-index: 90;
+}
+.tool-btn {
+  width: var(--toolbar-w); height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  color: var(--text2);
+  transition: color 0.12s, background 0.12s;
+  position: relative;
+  border: none; background: none;
+  font-family: inherit;
+}
+.tool-btn:hover { color: var(--text); background: var(--surface2); }
+.tool-btn.active { color: var(--accent); background: rgba(200,145,42,0.1); }
+.tool-btn.active::before {
+  content: '';
+  position: absolute; left: 0; top: 6px; bottom: 6px;
+  width: 2px; background: var(--accent); border-radius: 0 2px 2px 0;
+}
+.tool-btn svg { width: 18px; height: 18px; stroke-width: 1.5; }
+.tool-btn[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; left: calc(var(--toolbar-w) + 6px); top: 50%;
+  transform: translateY(-50%);
+  background: #0a0e06; color: var(--text);
+  padding: 4px 10px; border-radius: 5px;
+  font-size: 11px; font-weight: 500;
+  white-space: nowrap; z-index: 300;
+  border: 1px solid var(--border2);
+  pointer-events: none;
+}
+.tool-sep { height: 1px; background: var(--border); margin: 4px 8px; }
+
+/* ─── CANVAS AREA ─── */
+#canvasWrap {
+  grid-area: canvas;
+  position: relative;
+  overflow: hidden;
+  background: var(--cad-bg);
+}
+#canvasWrap canvas { display: block; }
+
+/* Crosshair overlay */
+#crosshairH, #crosshairV {
+  position: absolute; pointer-events: none;
+  background: var(--cad-crosshair); z-index: 5;
+}
+#crosshairH { height: 1px; width: 100%; left: 0; }
+#crosshairV { width: 1px; height: 100%; top: 0; }
+
+/* Snap indicator */
+.snap-dot {
+  position: absolute; pointer-events: none;
+  width: 10px; height: 10px;
+  border: 2px solid var(--cad-snap);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  display: none;
+}
+
+/* ─── RIGHT PANEL ─── */
+#rightPanel {
+  grid-area: panel;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  z-index: 90;
+}
+.panel-section {
+  border-bottom: 1px solid var(--border);
+}
+.panel-header {
+  padding: 8px 12px;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+.panel-header:hover { background: var(--surface2); }
+.panel-body {
+  padding: 6px 12px 10px;
+  font-size: 11px;
+}
+.panel-body.collapsed { display: none; }
+
+/* Properties */
+.prop-row {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  color: var(--text2);
+}
+.prop-row label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.prop-row input, .prop-row select {
+  width: 100px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  color: var(--text); font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+}
+.prop-row input:focus, .prop-row select:focus {
+  border-color: var(--accent);
+}
+
+/* Layers */
+.layer-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 0;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.layer-item:hover { background: var(--surface2); }
+.layer-item.active { background: rgba(200,145,42,0.08); }
+.layer-color {
+  width: 10px; height: 10px;
+  border-radius: 2px; flex-shrink: 0;
+}
+.layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer-icon {
+  width: 16px; height: 16px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--text2);
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.layer-icon:hover { opacity: 1; }
+.layer-icon.off { opacity: 0.2; }
+
+/* ─── STATUS BAR ─── */
+#statusBar {
+  grid-area: status;
+  display: flex; align-items: center;
+  background: var(--toolbar-bg);
+  border-top: 1px solid var(--border);
+  padding: 0 12px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text2);
+  gap: 16px;
+  z-index: 100;
+  user-select: none;
+}
+.status-item { display: flex; align-items: center; gap: 4px; }
+.status-toggle {
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.status-toggle:hover { background: var(--surface2); }
+.status-toggle.on { color: var(--accent); background: rgba(200,145,42,0.12); }
+.status-spacer { flex: 1; }
+
+/* ─── MODAL ─── */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 500;
+  align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--panel-bg);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  width: 90%; max-width: 560px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.modal-title {
+  padding: 16px 20px;
+  font-size: 14px; font-weight: 700;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-close {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; cursor: pointer;
+  color: var(--text2); font-size: 16px;
+  transition: background 0.12s;
+  border: none; background: none;
+}
+.modal-close:hover { background: var(--surface2); color: var(--text); }
+.modal-body { padding: 16px 20px; }
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+
+.btn {
+  padding: 7px 16px;
+  border-radius: 7px;
+  font-size: 12px; font-weight: 600;
+  font-family: inherit;
+  cursor: pointer; border: none;
+  transition: all 0.15s;
+}
+.btn-primary {
+  background: linear-gradient(180deg, var(--accent) 0%, #a87420 100%);
+  color: #fff;
+}
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-ghost {
+  background: var(--surface2);
+  color: var(--text);
+}
+.btn-ghost:hover { background: var(--surface3); }
+
+.form-group { margin-bottom: 12px; }
+.form-group label {
+  display: block; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text2); margin-bottom: 4px;
+}
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text); font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  border-color: var(--accent);
+}
+.form-row { display: flex; gap: 10px; }
+.form-row .form-group { flex: 1; }
+
+/* ─── TOAST ─── */
+#toast {
+  position: fixed; bottom: 48px; left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--toolbar-bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 500;
+  z-index: 600;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ─── DRAWING INFO PANEL (top overlay on canvas) ─── */
+.drawing-info {
+  position: absolute; top: 8px; left: 8px;
+  background: rgba(15,21,8,0.85);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text2);
+  z-index: 10;
+  backdrop-filter: blur(8px);
+  display: flex; gap: 14px;
+  user-select: none;
+}
+.drawing-info strong { color: var(--text); font-weight: 600; }
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 900px) {
+  :root { --panel-w: 180px; }
+}
+@media (max-width: 700px) {
+  #cadApp {
+    grid-template-columns: var(--toolbar-w) 1fr;
+    grid-template-areas:
+      "topbar topbar"
+      "toolbar canvas"
+      "status status";
+  }
+  #rightPanel { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     HTML STRUCTURE
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div id="cadApp">
+
+  <!-- TOP BAR -->
+  <div id="topBar">
+    <div class="top-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20V8l10-6 10 6v12"/><path d="M6 20v-8l6-4 6 4v8"/><path d="M10 20v-4h4v4"/></svg>
+      BeSix <span>CAD</span>
+    </div>
+
+    <div class="menu-item" onclick="toggleMenu(this,'menuFile')">Soubor
+      <div class="menu-dropdown" id="menuFile">
+        <div class="menu-dropdown-item" onclick="newDrawing()">Nový výkres <span class="shortcut">Ctrl+N</span></div>
+        <div class="menu-dropdown-item" onclick="importFile()">Importovat DXF/PDF… <span class="shortcut">Ctrl+O</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-dropdown-item" onclick="exportPDF()">Export PDF <span class="shortcut">Ctrl+P</span></div>
+        <div class="menu-dropdown-item" onclick="exportDXF()">Export DXF</div>
+        <div class="menu-dropdown-item" onclick="exportPNG()">Export PNG</div>
+        <div class="menu-sep"></div>
+        <div class="menu-dropdown-item" onclick="openTitleBlockModal()">Nastavení razítka…</div>
+      </div>
+    </div>
+
+    <div class="menu-item" onclick="toggleMenu(this,'menuEdit')">Editace
+      <div class="menu-dropdown" id="menuEdit">
+        <div class="menu-dropdown-item" onclick="doUndo()">Zpět <span class="shortcut">Ctrl+Z</span></div>
+        <div class="menu-dropdown-item" onclick="doRedo()">Vpřed <span class="shortcut">Ctrl+Y</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-dropdown-item" onclick="deleteSelected()">Smazat vybrané <span class="shortcut">Del</span></div>
+        <div class="menu-dropdown-item" onclick="selectAll()">Vybrat vše <span class="shortcut">Ctrl+A</span></div>
+      </div>
+    </div>
+
+    <div class="menu-item" onclick="toggleMenu(this,'menuView')">Zobrazení
+      <div class="menu-dropdown" id="menuView">
+        <div class="menu-dropdown-item" onclick="zoomExtents()">Celý výkres <span class="shortcut">Home</span></div>
+        <div class="menu-dropdown-item" onclick="zoomIn()">Přiblížit <span class="shortcut">+</span></div>
+        <div class="menu-dropdown-item" onclick="zoomOut()">Oddálit <span class="shortcut">-</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-dropdown-item" onclick="toggleGrid()">Mřížka on/off <span class="shortcut">F7</span></div>
+        <div class="menu-dropdown-item" onclick="toggleSnap()">Snap on/off <span class="shortcut">F3</span></div>
+        <div class="menu-dropdown-item" onclick="toggleOrtho()">Ortho on/off <span class="shortcut">F8</span></div>
+      </div>
+    </div>
+
+    <div class="top-spacer"></div>
+
+    <div class="top-right">
+      <div id="syncDot" title="Synchronizováno"></div>
+      <div class="top-user" id="userAvatar" style="background:#4A5340" onclick="logout()" title="Odhlásit">?</div>
+    </div>
+  </div>
+
+  <!-- LEFT TOOLBAR -->
+  <div id="toolbar">
+    <button class="tool-btn active" data-tool="select" data-tooltip="Výběr (V)" onclick="setTool('select')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 3l14 9-7 2-3 7z"/></svg>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="line" data-tooltip="Čára (L)" onclick="setTool('line')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="5" y1="19" x2="19" y2="5"/></svg>
+    </button>
+    <button class="tool-btn" data-tool="rect" data-tooltip="Obdélník (R)" onclick="setTool('rect')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+    </button>
+    <button class="tool-btn" data-tool="circle" data-tooltip="Kružnice (C)" onclick="setTool('circle')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/></svg>
+    </button>
+    <button class="tool-btn" data-tool="polyline" data-tooltip="Polyline (P)" onclick="setTool('polyline')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="4 18 8 8 14 14 20 4"/></svg>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="text" data-tooltip="Text (T)" onclick="setTool('text')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 4h12M12 4v16M8 20h8"/></svg>
+    </button>
+    <button class="tool-btn" data-tool="dimension" data-tooltip="Kóta (D)" onclick="setTool('dimension')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20V10M20 20V10M4 15h16M4 15l3-3M4 15l3 3M20 15l-3-3M20 15l-3 3"/></svg>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="wall" data-tooltip="Stěna (W)" onclick="setTool('wall')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="6" width="18" height="4"/><rect x="3" y="14" width="18" height="4"/><line x1="9" y1="6" x2="9" y2="10"/><line x1="15" y1="14" x2="15" y2="18"/></svg>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="move" data-tooltip="Přesun (M)" onclick="setTool('move')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2l3 3h-6zM12 22l-3-3h6zM2 12l3-3v6zM22 12l-3 3v-6z"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+    <button class="tool-btn" data-tool="copy" data-tooltip="Kopie (Ctrl+C)" onclick="copySelected()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="8" y="8" width="12" height="12" rx="1"/><path d="M16 8V6a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h2"/></svg>
+    </button>
+    <button class="tool-btn" data-tool="rotate" data-tooltip="Rotace" onclick="setTool('rotate')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 015.64 5.64L1 10M3.51 15A9 9 0 0018.36 18.36L23 14"/></svg>
+    </button>
+    <button class="tool-btn" data-tool="mirror" data-tooltip="Zrcadlo" onclick="setTool('mirror')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="2" x2="12" y2="22" stroke-dasharray="3 2"/><polygon points="5,7 9,4 9,10"/><polygon points="19,7 15,4 15,10"/></svg>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="trim" data-tooltip="Trim (TR)" onclick="setTool('trim')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><line x1="8.6" y1="15.6" x2="22" y2="2"/><line x1="15.4" y1="15.6" x2="2" y2="2"/></svg>
+    </button>
+    <button class="tool-btn" data-tool="offset" data-tooltip="Offset (O)" onclick="setTool('offset')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="4" width="12" height="12" rx="1"/><rect x="8" y="8" width="12" height="12" rx="1"/></svg>
+    </button>
+  </div>
+
+  <!-- CANVAS -->
+  <div id="canvasWrap">
+    <canvas id="cadCanvas"></canvas>
+    <div id="crosshairH"></div>
+    <div id="crosshairV"></div>
+    <div class="snap-dot" id="snapDot"></div>
+    <div class="drawing-info" id="drawingInfo">
+      <span><strong id="diName">Nový výkres</strong></span>
+      <span>Měřítko: <strong id="diScale">1:100</strong></span>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div id="rightPanel">
+    <!-- Properties -->
+    <div class="panel-section" id="propsSection">
+      <div class="panel-header" onclick="togglePanel('propsBody')">Vlastnosti <span>▾</span></div>
+      <div class="panel-body" id="propsBody">
+        <div id="propsContent">
+          <div style="color:var(--muted); font-size:10px; padding: 8px 0;">Nic nevybráno</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Layers -->
+    <div class="panel-section" id="layersSection" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+      <div class="panel-header" onclick="togglePanel('layersBody')">
+        Vrstvy <span>▾</span>
+      </div>
+      <div class="panel-body" id="layersBody" style="flex:1; overflow-y:auto;">
+        <div id="layersList"></div>
+        <div style="margin-top:8px;">
+          <button class="btn btn-ghost" style="font-size:10px; padding:4px 10px; width:100%;" onclick="addLayer()">+ Přidat vrstvu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Settings -->
+    <div class="panel-section">
+      <div class="panel-header" onclick="togglePanel('settingsBody')">Nastavení <span>▾</span></div>
+      <div class="panel-body" id="settingsBody">
+        <div class="prop-row"><label>Měřítko</label>
+          <select id="scaleSelect" onchange="setScale(this.value)">
+            <option value="1:20">1:20</option>
+            <option value="1:50">1:50</option>
+            <option value="1:100" selected>1:100</option>
+            <option value="1:200">1:200</option>
+            <option value="1:500">1:500</option>
+          </select>
+        </div>
+        <div class="prop-row"><label>Mřížka mm</label>
+          <input type="number" id="gridSizeInput" value="100" min="10" max="5000" step="10" onchange="setGridSize(+this.value)">
+        </div>
+        <div class="prop-row"><label>Formát</label>
+          <select id="paperSelect">
+            <option value="A4">A4</option>
+            <option value="A3" selected>A3</option>
+            <option value="A2">A2</option>
+            <option value="A1">A1</option>
+            <option value="A0">A0</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div id="statusBar">
+    <div class="status-item">X: <span id="cursorX">0</span></div>
+    <div class="status-item">Y: <span id="cursorY">0</span></div>
+    <div class="status-item" style="margin-left:8px;">
+      <span class="status-toggle on" id="snapToggle" onclick="toggleSnap()">SNAP</span>
+    </div>
+    <div class="status-item">
+      <span class="status-toggle" id="orthoToggle" onclick="toggleOrtho()">ORTHO</span>
+    </div>
+    <div class="status-item">
+      <span class="status-toggle on" id="gridToggle" onclick="toggleGrid()">GRID</span>
+    </div>
+    <div class="status-spacer"></div>
+    <div class="status-item">Zoom: <span id="zoomLevel">100</span>%</div>
+    <div class="status-item" id="statusTool">Výběr</div>
+  </div>
+</div>
+
+<!-- TITLE BLOCK MODAL -->
+<div class="modal-overlay" id="titleBlockModal">
+  <div class="modal-box" style="max-width:640px;">
+    <div class="modal-title">Nastavení razítka <button class="modal-close" onclick="closeTitleBlockModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>Název projektu</label><input id="tb_projectName" placeholder="Bytový dům Vinohrady"></div>
+        <div class="form-group"><label>Číslo výkresu</label><input id="tb_drawingNumber" placeholder="D.1.1.01"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Název výkresu</label><input id="tb_drawingTitle" placeholder="Půdorys 1.NP"></div>
+        <div class="form-group"><label>Stupeň PD</label>
+          <select id="tb_stage">
+            <option value="DSP">DSP</option><option value="DPS">DPS</option>
+            <option value="DSPS">DSPS</option><option value="RDS">RDS</option>
+            <option value="PDPS">PDPS</option><option value="STS">STS</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Vypracoval</label><input id="tb_author"></div>
+        <div class="form-group"><label>Kontroloval</label><input id="tb_checker"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Investor</label><input id="tb_investor" placeholder="ABC Development s.r.o."></div>
+        <div class="form-group"><label>Datum</label><input id="tb_date" type="date"></div>
+      </div>
+      <div class="form-group"><label>Logo (PNG/SVG)</label><input type="file" id="tb_logo" accept="image/*" style="font-size:11px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeTitleBlockModal()">Zrušit</button>
+      <button class="btn btn-primary" onclick="saveTitleBlock()">Uložit razítko</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- Hidden file inputs -->
+<input type="file" id="importFileInput" accept=".dxf,.pdf,.dwg" style="display:none" onchange="handleImport(event)">
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   BeSix CAD — JavaScript
+   MVP: Canvas, drawing tools, layers, export, auth
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// ── State ──────────────────────────────────────────────────────────────────
+let _apiUser = null;
+let _activeTool = 'select';
+let _isDrawing = false;
+let _drawStart = null;
+let _tempShape = null;
+let _polyPoints = [];
+
+const CAD = {
+  scale: '1:100',
+  paperSize: 'A3',
+  gridSize: 100,     // mm
+  gridVisible: true,
+  snapEnabled: true,
+  orthoEnabled: false,
+  zoom: 1,
+  panX: 0, panY: 0,
+  layers: [
+    { id: 'nosne',   name: '0-NOSNÉ',   color: '#ff4444', visible: true, locked: false, active: true },
+    { id: 'pricky',  name: '1-PŘÍČKY',  color: '#44cc44', visible: true, locked: false, active: false },
+    { id: 'koty',    name: '2-KÓTY',    color: '#4488ff', visible: true, locked: false, active: false },
+    { id: 'text',    name: '3-TEXT',     color: '#ffffff', visible: true, locked: false, active: false },
+    { id: 'srafy',   name: '4-ŠRAFY',   color: '#888888', visible: true, locked: false, active: false },
+    { id: 'tzb',     name: '5-TZB',     color: '#cc44ff', visible: true, locked: false, active: false },
+    { id: 'podklad', name: '6-PODKLAD', color: '#555555', visible: true, locked: true,  active: false },
+  ],
+  titleBlock: {
+    projectName: '', drawingNumber: '', drawingTitle: '',
+    stage: 'DPS', author: '', checker: '', investor: '',
+    date: '', logoData: null,
+  },
+  undoStack: [],
+  redoStack: [],
+};
+
+let canvas; // Fabric.js instance
+let _gridLines = [];
+
+// ── AUTH ────────────────────────────────────────────────────────────────────
+async function bootAuth() {
+  let res;
+  try {
+    res = await fetch('/api/auth.php?action=me', { credentials: 'include' });
+  } catch {
+    // No PHP backend (local dev) — start offline
+    startOffline();
+    return;
+  }
+  if (!res.ok) {
+    window.location.href = '/login.php?redirect=cad';
+    return;
+  }
+  const data = await res.json();
+  _apiUser = data.user;
+  applyUser();
+  initCAD();
+}
+
+function startOffline() {
+  _apiUser = { id: 0, name: 'Offline', email: '', avatar_color: '#4A5340' };
+  applyUser();
+  initCAD();
+  toast('Offline režim — bez serveru');
+}
+
+function applyUser() {
+  const av = document.getElementById('userAvatar');
+  if (!_apiUser) return;
+  av.textContent = _apiUser.name.substring(0, 2).toUpperCase();
+  av.style.background = _apiUser.avatar_color || '#4A5340';
+  av.title = _apiUser.name + ' — klikni pro odhlášení';
+  CAD.titleBlock.author = _apiUser.name;
+  document.getElementById('tb_author').value = _apiUser.name;
+}
+
+async function logout() {
+  if (!confirm('Odhlásit se?')) return;
+  try { await fetch('/api/auth.php?action=logout', { method: 'POST', credentials: 'include' }); } catch {}
+  window.location.href = '/login.php';
+}
+
+// ── INIT CAD ───────────────────────────────────────────────────────────────
+function initCAD() {
+  const wrap = document.getElementById('canvasWrap');
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
+
+  canvas = new fabric.Canvas('cadCanvas', {
+    width: w,
+    height: h,
+    backgroundColor: '#1a1a2e',
+    selection: true,
+    preserveObjectStacking: true,
+    fireRightClick: true,
+    stopContextMenu: true,
+  });
+
+  // Resize handler
+  window.addEventListener('resize', () => {
+    const ww = wrap.clientWidth;
+    const hh = wrap.clientHeight;
+    canvas.setDimensions({ width: ww, height: hh });
+    drawGrid();
+  });
+
+  // Init grid
+  drawGrid();
+  renderLayers();
+  setupCanvasEvents();
+  setupKeyboard();
+  loadFromIndexedDB();
+
+  // Set initial date
+  document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
+}
+
+// ── GRID ───────────────────────────────────────────────────────────────────
+function drawGrid() {
+  // Remove old grid
+  _gridLines.forEach(l => canvas.remove(l));
+  _gridLines = [];
+  if (!CAD.gridVisible) { canvas.renderAll(); return; }
+
+  const step = CAD.gridSize * (CAD.zoom || 1) * 0.5; // px per grid cell (approx)
+  if (step < 8) { canvas.renderAll(); return; } // too dense
+
+  const w = canvas.width;
+  const h = canvas.height;
+
+  for (let x = 0; x < w; x += step) {
+    const isMajor = Math.round(x / step) % 5 === 0;
+    const line = new fabric.Line([x, 0, x, h], {
+      stroke: isMajor ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
+      strokeWidth: 0.5,
+      selectable: false, evented: false,
+      excludeFromExport: true,
+    });
+    _gridLines.push(line);
+    canvas.add(line);
+    canvas.sendToBack(line);
+  }
+  for (let y = 0; y < h; y += step) {
+    const isMajor = Math.round(y / step) % 5 === 0;
+    const line = new fabric.Line([0, y, w, y], {
+      stroke: isMajor ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
+      strokeWidth: 0.5,
+      selectable: false, evented: false,
+      excludeFromExport: true,
+    });
+    _gridLines.push(line);
+    canvas.add(line);
+    canvas.sendToBack(line);
+  }
+  canvas.renderAll();
+}
+
+// ── CANVAS EVENTS ──────────────────────────────────────────────────────────
+function setupCanvasEvents() {
+  const wrap = document.getElementById('canvasWrap');
+  const chH = document.getElementById('crosshairH');
+  const chV = document.getElementById('crosshairV');
+
+  // Crosshair
+  wrap.addEventListener('mousemove', (e) => {
+    const r = wrap.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    const y = e.clientY - r.top;
+    chH.style.top = y + 'px';
+    chV.style.left = x + 'px';
+    document.getElementById('cursorX').textContent = Math.round(x);
+    document.getElementById('cursorY').textContent = Math.round(y);
+  });
+
+  // Zoom (mouse wheel)
+  canvas.on('mouse:wheel', (opt) => {
+    const delta = opt.e.deltaY;
+    let zoom = canvas.getZoom();
+    zoom *= 0.999 ** delta;
+    if (zoom > 20) zoom = 20;
+    if (zoom < 0.05) zoom = 0.05;
+    canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+    CAD.zoom = zoom;
+    document.getElementById('zoomLevel').textContent = Math.round(zoom * 100);
+    opt.e.preventDefault();
+    opt.e.stopPropagation();
+  });
+
+  // Pan (middle button or Alt+drag)
+  let _isPanning = false;
+  let _panLast = null;
+  canvas.on('mouse:down', (opt) => {
+    if (opt.e.button === 1 || (opt.e.altKey && opt.e.button === 0)) {
+      _isPanning = true;
+      _panLast = { x: opt.e.clientX, y: opt.e.clientY };
+      canvas.selection = false;
+      canvas.setCursor('grab');
+      return;
+    }
+    handleToolMouseDown(opt);
+  });
+  canvas.on('mouse:move', (opt) => {
+    if (_isPanning && _panLast) {
+      const dx = opt.e.clientX - _panLast.x;
+      const dy = opt.e.clientY - _panLast.y;
+      const vpt = canvas.viewportTransform;
+      vpt[4] += dx;
+      vpt[5] += dy;
+      canvas.requestRenderAll();
+      _panLast = { x: opt.e.clientX, y: opt.e.clientY };
+      return;
+    }
+    handleToolMouseMove(opt);
+  });
+  canvas.on('mouse:up', (opt) => {
+    if (_isPanning) {
+      _isPanning = false;
+      _panLast = null;
+      canvas.selection = (_activeTool === 'select');
+      canvas.setCursor('crosshair');
+      return;
+    }
+    handleToolMouseUp(opt);
+  });
+
+  // Selection → update properties
+  canvas.on('selection:created', updateProps);
+  canvas.on('selection:updated', updateProps);
+  canvas.on('selection:cleared', clearProps);
+  canvas.on('object:modified', () => saveUndoState());
+}
+
+// ── DRAWING TOOLS ──────────────────────────────────────────────────────────
+function setTool(tool) {
+  _activeTool = tool;
+  _isDrawing = false;
+  _drawStart = null;
+  if (_tempShape) { canvas.remove(_tempShape); _tempShape = null; }
+  _polyPoints = [];
+
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.tool-btn[data-tool="${tool}"]`);
+  if (btn) btn.classList.add('active');
+
+  canvas.selection = (tool === 'select');
+  canvas.forEachObject(o => { if (!o.excludeFromExport) o.selectable = (tool === 'select'); });
+  canvas.discardActiveObject().renderAll();
+
+  const names = {
+    select: 'Výběr', line: 'Čára', rect: 'Obdélník', circle: 'Kružnice',
+    polyline: 'Polyline', text: 'Text', dimension: 'Kóta', wall: 'Stěna',
+    move: 'Přesun', copy: 'Kopie', rotate: 'Rotace', mirror: 'Zrcadlo',
+    trim: 'Trim', offset: 'Offset'
+  };
+  document.getElementById('statusTool').textContent = names[tool] || tool;
+  wrap.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+}
+
+function getActiveLayer() {
+  return CAD.layers.find(l => l.active) || CAD.layers[0];
+}
+
+function getPointer(opt) {
+  const p = canvas.getPointer(opt.e);
+  if (CAD.snapEnabled && CAD.gridSize > 0) {
+    const step = CAD.gridSize * 0.5;
+    p.x = Math.round(p.x / step) * step;
+    p.y = Math.round(p.y / step) * step;
+  }
+  if (CAD.orthoEnabled && _drawStart) {
+    const dx = Math.abs(p.x - _drawStart.x);
+    const dy = Math.abs(p.y - _drawStart.y);
+    if (dx > dy) p.y = _drawStart.y;
+    else p.x = _drawStart.x;
+  }
+  return p;
+}
+
+function handleToolMouseDown(opt) {
+  if (opt.e.button !== 0) return;
+  const p = getPointer(opt);
+  const layer = getActiveLayer();
+
+  switch (_activeTool) {
+    case 'line':
+      if (!_isDrawing) {
+        _isDrawing = true;
+        _drawStart = p;
+        _tempShape = new fabric.Line([p.x, p.y, p.x, p.y], {
+          stroke: layer.color, strokeWidth: 1.5,
+          selectable: false, evented: false,
+          _cadLayer: layer.id,
+        });
+        canvas.add(_tempShape);
+      } else {
+        _tempShape.set({ x2: p.x, y2: p.y, selectable: true, evented: true });
+        saveUndoState();
+        _tempShape = null;
+        _isDrawing = false;
+        _drawStart = null;
+      }
+      break;
+
+    case 'rect':
+      _isDrawing = true;
+      _drawStart = p;
+      _tempShape = new fabric.Rect({
+        left: p.x, top: p.y, width: 0, height: 0,
+        fill: 'transparent', stroke: layer.color, strokeWidth: 1.5,
+        selectable: false, evented: false,
+        _cadLayer: layer.id,
+      });
+      canvas.add(_tempShape);
+      break;
+
+    case 'circle':
+      _isDrawing = true;
+      _drawStart = p;
+      _tempShape = new fabric.Circle({
+        left: p.x, top: p.y, radius: 0, originX: 'center', originY: 'center',
+        fill: 'transparent', stroke: layer.color, strokeWidth: 1.5,
+        selectable: false, evented: false,
+        _cadLayer: layer.id,
+      });
+      canvas.add(_tempShape);
+      break;
+
+    case 'polyline':
+      _polyPoints.push(p);
+      if (_polyPoints.length === 1) {
+        _isDrawing = true;
+      }
+      canvas.renderAll();
+      break;
+
+    case 'text':
+      const textVal = prompt('Zadej text:');
+      if (textVal) {
+        const t = new fabric.IText(textVal, {
+          left: p.x, top: p.y,
+          fontSize: 14, fill: layer.color,
+          fontFamily: 'Montserrat',
+          _cadLayer: layer.id,
+        });
+        canvas.add(t);
+        saveUndoState();
+      }
+      break;
+
+    case 'dimension':
+      if (!_isDrawing) {
+        _isDrawing = true;
+        _drawStart = p;
+      } else {
+        addDimension(_drawStart, p, layer);
+        _isDrawing = false;
+        _drawStart = null;
+      }
+      break;
+
+    case 'wall':
+      if (!_isDrawing) {
+        _isDrawing = true;
+        _drawStart = p;
+        const thickness = 300 * 0.5; // 300mm at scale
+        _tempShape = new fabric.Rect({
+          left: p.x, top: p.y - thickness / 2,
+          width: 0, height: thickness,
+          fill: 'rgba(255,68,68,0.15)', stroke: layer.color, strokeWidth: 1.5,
+          selectable: false, evented: false,
+          _cadLayer: layer.id, _cadType: 'wall',
+        });
+        canvas.add(_tempShape);
+      } else {
+        const dx = p.x - _drawStart.x;
+        const dy = p.y - _drawStart.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        _tempShape.set({
+          width: len, angle: angle,
+          selectable: true, evented: true,
+        });
+        canvas.renderAll();
+        saveUndoState();
+        _tempShape = null;
+        _isDrawing = false;
+        _drawStart = null;
+      }
+      break;
+  }
+}
+
+function handleToolMouseMove(opt) {
+  const p = getPointer(opt);
+  if (!_isDrawing || !_tempShape) return;
+
+  switch (_activeTool) {
+    case 'line':
+      _tempShape.set({ x2: p.x, y2: p.y });
+      break;
+    case 'rect':
+      _tempShape.set({
+        width: Math.abs(p.x - _drawStart.x),
+        height: Math.abs(p.y - _drawStart.y),
+        left: Math.min(p.x, _drawStart.x),
+        top: Math.min(p.y, _drawStart.y),
+      });
+      break;
+    case 'circle':
+      const dx = p.x - _drawStart.x;
+      const dy = p.y - _drawStart.y;
+      _tempShape.set({ radius: Math.sqrt(dx * dx + dy * dy) });
+      break;
+    case 'wall':
+      const wdx = p.x - _drawStart.x;
+      const wdy = p.y - _drawStart.y;
+      const wLen = Math.sqrt(wdx * wdx + wdy * wdy);
+      const wAngle = Math.atan2(wdy, wdx) * 180 / Math.PI;
+      _tempShape.set({ width: wLen, angle: wAngle });
+      break;
+  }
+  canvas.renderAll();
+}
+
+function handleToolMouseUp(opt) {
+  if (!_isDrawing) return;
+  const p = getPointer(opt);
+
+  switch (_activeTool) {
+    case 'rect':
+    case 'circle':
+      if (_tempShape) {
+        _tempShape.set({ selectable: true, evented: true });
+        saveUndoState();
+      }
+      _tempShape = null;
+      _isDrawing = false;
+      _drawStart = null;
+      break;
+  }
+}
+
+// ── DIMENSION TOOL ─────────────────────────────────────────────────────────
+function addDimension(p1, p2, layer) {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  const offset = 20;
+  const angle = Math.atan2(dy, dx);
+  const perpX = -Math.sin(angle) * offset;
+  const perpY = Math.cos(angle) * offset;
+
+  const group = new fabric.Group([
+    // Main line
+    new fabric.Line([p1.x, p1.y + perpY, p2.x, p2.y + perpY], {
+      stroke: layer.color, strokeWidth: 0.8,
+    }),
+    // Extension lines
+    new fabric.Line([p1.x, p1.y, p1.x, p1.y + perpY + 5], {
+      stroke: layer.color, strokeWidth: 0.5,
+    }),
+    new fabric.Line([p2.x, p2.y, p2.x, p2.y + perpY + 5], {
+      stroke: layer.color, strokeWidth: 0.5,
+    }),
+    // Arrows
+    new fabric.Triangle({
+      left: p1.x + perpX, top: p1.y + perpY,
+      width: 6, height: 10, fill: layer.color,
+      angle: angle * 180 / Math.PI + 90, originX: 'center', originY: 'center',
+    }),
+    new fabric.Triangle({
+      left: p2.x + perpX, top: p2.y + perpY,
+      width: 6, height: 10, fill: layer.color,
+      angle: angle * 180 / Math.PI - 90, originX: 'center', originY: 'center',
+    }),
+    // Text
+    new fabric.Text(Math.round(len).toString(), {
+      left: mid.x, top: mid.y + perpY - 14,
+      fontSize: 11, fill: layer.color,
+      fontFamily: 'JetBrains Mono',
+      originX: 'center',
+    }),
+  ], {
+    _cadLayer: layer.id, _cadType: 'dimension',
+  });
+
+  canvas.add(group);
+  saveUndoState();
+}
+
+// ── POLYLINE FINISH ────────────────────────────────────────────────────────
+function finishPolyline() {
+  if (_polyPoints.length < 2) { _polyPoints = []; _isDrawing = false; return; }
+  const layer = getActiveLayer();
+  const pts = _polyPoints.flatMap(p => [p.x, p.y]);
+  const pl = new fabric.Polyline(_polyPoints.map(p => ({ x: p.x, y: p.y })), {
+    fill: 'transparent', stroke: layer.color, strokeWidth: 1.5,
+    _cadLayer: layer.id,
+  });
+  canvas.add(pl);
+  saveUndoState();
+  _polyPoints = [];
+  _isDrawing = false;
+}
+
+// ── KEYBOARD ───────────────────────────────────────────────────────────────
+function setupKeyboard() {
+  document.addEventListener('keydown', (e) => {
+    // Skip if typing in input
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+    const key = e.key.toLowerCase();
+    const ctrl = e.ctrlKey || e.metaKey;
+
+    if (ctrl && key === 'z') { e.preventDefault(); doUndo(); }
+    else if (ctrl && key === 'y') { e.preventDefault(); doRedo(); }
+    else if (ctrl && key === 'a') { e.preventDefault(); selectAll(); }
+    else if (ctrl && key === 'n') { e.preventDefault(); newDrawing(); }
+    else if (ctrl && key === 'o') { e.preventDefault(); importFile(); }
+    else if (ctrl && key === 'p') { e.preventDefault(); exportPDF(); }
+    else if (ctrl && key === 'c') { copySelected(); }
+    else if (key === 'escape') { setTool('select'); if (_activeTool === 'polyline') finishPolyline(); }
+    else if (key === 'enter' && _activeTool === 'polyline') { finishPolyline(); }
+    else if (key === 'delete' || key === 'backspace') { deleteSelected(); }
+    else if (key === 'v' && !ctrl) { setTool('select'); }
+    else if (key === 'l' && !ctrl) { setTool('line'); }
+    else if (key === 'r' && !ctrl) { setTool('rect'); }
+    else if (key === 'c' && !ctrl) { setTool('circle'); }
+    else if (key === 'p' && !ctrl) { setTool('polyline'); }
+    else if (key === 't' && !ctrl) { setTool('text'); }
+    else if (key === 'd' && !ctrl) { setTool('dimension'); }
+    else if (key === 'w' && !ctrl) { setTool('wall'); }
+    else if (key === 'm' && !ctrl) { setTool('move'); }
+    else if (key === 'o' && !ctrl) { setTool('offset'); }
+    else if (key === 'f7') { e.preventDefault(); toggleGrid(); }
+    else if (key === 'f8') { e.preventDefault(); toggleOrtho(); }
+    else if (key === 'f3') { e.preventDefault(); toggleSnap(); }
+    else if (key === 'home') { zoomExtents(); }
+    else if (key === '+' || key === '=') { zoomIn(); }
+    else if (key === '-') { zoomOut(); }
+  });
+}
+
+// ── LAYERS ─────────────────────────────────────────────────────────────────
+function renderLayers() {
+  const list = document.getElementById('layersList');
+  list.innerHTML = CAD.layers.map((l, i) => `
+    <div class="layer-item ${l.active ? 'active' : ''}" onclick="setActiveLayer('${l.id}')">
+      <div class="layer-color" style="background:${l.color}"></div>
+      <span class="layer-name">${l.name}</span>
+      <span class="layer-icon ${l.visible ? '' : 'off'}" onclick="event.stopPropagation();toggleLayerVis('${l.id}')" title="Viditelnost">${l.visible ? '👁' : '◻'}</span>
+      <span class="layer-icon ${l.locked ? '' : 'off'}" onclick="event.stopPropagation();toggleLayerLock('${l.id}')" title="Zámek">${l.locked ? '🔒' : '🔓'}</span>
+    </div>
+  `).join('');
+}
+
+function setActiveLayer(id) {
+  CAD.layers.forEach(l => l.active = (l.id === id));
+  renderLayers();
+}
+
+function toggleLayerVis(id) {
+  const l = CAD.layers.find(x => x.id === id);
+  if (!l) return;
+  l.visible = !l.visible;
+  canvas.getObjects().forEach(o => {
+    if (o._cadLayer === id) o.visible = l.visible;
+  });
+  canvas.renderAll();
+  renderLayers();
+}
+
+function toggleLayerLock(id) {
+  const l = CAD.layers.find(x => x.id === id);
+  if (!l) return;
+  l.locked = !l.locked;
+  canvas.getObjects().forEach(o => {
+    if (o._cadLayer === id) {
+      o.selectable = !l.locked;
+      o.evented = !l.locked;
+    }
+  });
+  canvas.renderAll();
+  renderLayers();
+}
+
+function addLayer() {
+  const name = prompt('Název nové vrstvy:');
+  if (!name) return;
+  const colors = ['#ff8800','#00cccc','#ffcc00','#ff66aa','#66ff66','#8888ff'];
+  const color = colors[CAD.layers.length % colors.length];
+  CAD.layers.push({
+    id: 'custom_' + Date.now(),
+    name: name,
+    color: color,
+    visible: true,
+    locked: false,
+    active: false,
+  });
+  renderLayers();
+}
+
+// ── PROPERTIES PANEL ───────────────────────────────────────────────────────
+function updateProps() {
+  const obj = canvas.getActiveObject();
+  if (!obj) { clearProps(); return; }
+  const el = document.getElementById('propsContent');
+  const type = obj.type || 'object';
+  const layerName = CAD.layers.find(l => l.id === obj._cadLayer)?.name || '—';
+  let html = `
+    <div class="prop-row"><label>Typ</label><span style="color:var(--text)">${type}</span></div>
+    <div class="prop-row"><label>Vrstva</label><span style="color:var(--text)">${layerName}</span></div>
+    <div class="prop-row"><label>X</label><input type="number" value="${Math.round(obj.left || 0)}" onchange="setProp('left',+this.value)"></div>
+    <div class="prop-row"><label>Y</label><input type="number" value="${Math.round(obj.top || 0)}" onchange="setProp('top',+this.value)"></div>
+  `;
+  if (obj.width !== undefined) html += `<div class="prop-row"><label>Šířka</label><input type="number" value="${Math.round(obj.width * (obj.scaleX || 1))}" onchange="setProp('width',+this.value)"></div>`;
+  if (obj.height !== undefined) html += `<div class="prop-row"><label>Výška</label><input type="number" value="${Math.round(obj.height * (obj.scaleY || 1))}" onchange="setProp('height',+this.value)"></div>`;
+  if (obj.angle !== undefined) html += `<div class="prop-row"><label>Úhel</label><input type="number" value="${Math.round(obj.angle)}" onchange="setProp('angle',+this.value)"></div>`;
+  html += `<div class="prop-row"><label>Barva</label><input type="color" value="${obj.stroke || obj.fill || '#ffffff'}" onchange="setPropColor(this.value)"></div>`;
+  el.innerHTML = html;
+}
+
+function clearProps() {
+  document.getElementById('propsContent').innerHTML = '<div style="color:var(--muted);font-size:10px;padding:8px 0;">Nic nevybráno</div>';
+}
+
+function setProp(prop, val) {
+  const obj = canvas.getActiveObject();
+  if (!obj) return;
+  obj.set(prop, val);
+  canvas.renderAll();
+  saveUndoState();
+}
+
+function setPropColor(val) {
+  const obj = canvas.getActiveObject();
+  if (!obj) return;
+  if (obj.stroke) obj.set('stroke', val);
+  if (obj.fill && obj.fill !== 'transparent') obj.set('fill', val);
+  canvas.renderAll();
+  saveUndoState();
+}
+
+// ── UNDO / REDO ────────────────────────────────────────────────────────────
+function saveUndoState() {
+  const json = canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']);
+  CAD.undoStack.push(JSON.stringify(json));
+  if (CAD.undoStack.length > 50) CAD.undoStack.shift();
+  CAD.redoStack = [];
+  autoSave();
+}
+
+function doUndo() {
+  if (CAD.undoStack.length === 0) return;
+  const current = canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']);
+  CAD.redoStack.push(JSON.stringify(current));
+  const prev = JSON.parse(CAD.undoStack.pop());
+  canvas.loadFromJSON(prev, () => { drawGrid(); canvas.renderAll(); });
+  toast('Zpět');
+}
+
+function doRedo() {
+  if (CAD.redoStack.length === 0) return;
+  const current = canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']);
+  CAD.undoStack.push(JSON.stringify(current));
+  const next = JSON.parse(CAD.redoStack.pop());
+  canvas.loadFromJSON(next, () => { drawGrid(); canvas.renderAll(); });
+  toast('Vpřed');
+}
+
+// ── ACTIONS ────────────────────────────────────────────────────────────────
+function deleteSelected() {
+  const active = canvas.getActiveObjects();
+  if (active.length === 0) return;
+  active.forEach(o => canvas.remove(o));
+  canvas.discardActiveObject().renderAll();
+  saveUndoState();
+  toast(`Smazáno ${active.length} objektů`);
+}
+
+function selectAll() {
+  const objs = canvas.getObjects().filter(o => o.selectable && !o.excludeFromExport);
+  if (objs.length === 0) return;
+  const sel = new fabric.ActiveSelection(objs, { canvas });
+  canvas.setActiveObject(sel);
+  canvas.renderAll();
+}
+
+function copySelected() {
+  const active = canvas.getActiveObject();
+  if (!active) return;
+  active.clone((cloned) => {
+    cloned.set({ left: cloned.left + 20, top: cloned.top + 20 });
+    if (cloned.type === 'activeSelection') {
+      cloned.canvas = canvas;
+      cloned.forEachObject(o => canvas.add(o));
+      cloned.setCoords();
+    } else {
+      canvas.add(cloned);
+    }
+    canvas.setActiveObject(cloned);
+    canvas.renderAll();
+    saveUndoState();
+    toast('Zkopírováno');
+  }, ['_cadLayer', '_cadType']);
+}
+
+function newDrawing() {
+  if (!confirm('Vytvořit nový výkres? Neuložené změny budou ztraceny.')) return;
+  canvas.clear();
+  canvas.backgroundColor = '#1a1a2e';
+  CAD.undoStack = [];
+  CAD.redoStack = [];
+  drawGrid();
+  toast('Nový výkres');
+}
+
+// ── ZOOM ───────────────────────────────────────────────────────────────────
+function zoomIn() {
+  let z = canvas.getZoom() * 1.2;
+  if (z > 20) z = 20;
+  canvas.setZoom(z);
+  CAD.zoom = z;
+  document.getElementById('zoomLevel').textContent = Math.round(z * 100);
+}
+
+function zoomOut() {
+  let z = canvas.getZoom() / 1.2;
+  if (z < 0.05) z = 0.05;
+  canvas.setZoom(z);
+  CAD.zoom = z;
+  document.getElementById('zoomLevel').textContent = Math.round(z * 100);
+}
+
+function zoomExtents() {
+  canvas.setZoom(1);
+  canvas.viewportTransform = [1, 0, 0, 1, 0, 0];
+  CAD.zoom = 1;
+  document.getElementById('zoomLevel').textContent = '100';
+  canvas.renderAll();
+}
+
+// ── TOGGLES ────────────────────────────────────────────────────────────────
+function toggleGrid() {
+  CAD.gridVisible = !CAD.gridVisible;
+  document.getElementById('gridToggle').classList.toggle('on', CAD.gridVisible);
+  drawGrid();
+}
+
+function toggleSnap() {
+  CAD.snapEnabled = !CAD.snapEnabled;
+  document.getElementById('snapToggle').classList.toggle('on', CAD.snapEnabled);
+}
+
+function toggleOrtho() {
+  CAD.orthoEnabled = !CAD.orthoEnabled;
+  document.getElementById('orthoToggle').classList.toggle('on', CAD.orthoEnabled);
+}
+
+function setScale(val) {
+  CAD.scale = val;
+  document.getElementById('diScale').textContent = val;
+}
+
+function setGridSize(val) {
+  if (val < 10) val = 10;
+  CAD.gridSize = val;
+  drawGrid();
+}
+
+function togglePanel(id) {
+  document.getElementById(id).classList.toggle('collapsed');
+}
+
+// ── MENUS ──────────────────────────────────────────────────────────────────
+function toggleMenu(el, id) {
+  const dd = document.getElementById(id);
+  const isOpen = dd.classList.contains('open');
+  document.querySelectorAll('.menu-dropdown').forEach(d => d.classList.remove('open'));
+  document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+  if (!isOpen) { dd.classList.add('open'); el.classList.add('active'); }
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.menu-item')) {
+    document.querySelectorAll('.menu-dropdown').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+  }
+});
+
+// ── IMPORT ─────────────────────────────────────────────────────────────────
+function importFile() {
+  document.getElementById('importFileInput').click();
+}
+
+async function handleImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'dxf') {
+    toast('Importuji DXF…');
+    const text = await file.text();
+    parseDXF(text);
+  } else if (ext === 'pdf') {
+    toast('PDF import — bude přidán jako podkladová vrstva');
+    // TODO: pdf.js integration
+  } else if (ext === 'dwg') {
+    toast('DWG import vyžaduje konverzi na DXF');
+  }
+  document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+}
+
+// Basic DXF parser (lines, circles, arcs, text)
+function parseDXF(text) {
+  const lines = text.split('\n').map(l => l.trim());
+  const entities = [];
+  let i = 0;
+  // Find ENTITIES section
+  while (i < lines.length && lines[i] !== 'ENTITIES') i++;
+  i++;
+
+  let entity = null;
+  while (i < lines.length - 1) {
+    const code = parseInt(lines[i]);
+    const value = lines[i + 1];
+    i += 2;
+
+    if (code === 0) {
+      if (entity) entities.push(entity);
+      if (value === 'ENDSEC') break;
+      entity = { type: value, props: {} };
+    } else if (entity) {
+      entity.props[code] = isNaN(+value) ? value : +value;
+    }
+  }
+  if (entity) entities.push(entity);
+
+  const layer = getActiveLayer();
+  entities.forEach(e => {
+    const p = e.props;
+    switch (e.type) {
+      case 'LINE':
+        canvas.add(new fabric.Line([p[10]||0, -(p[20]||0), p[11]||0, -(p[21]||0)], {
+          stroke: layer.color, strokeWidth: 1, _cadLayer: layer.id,
+        }));
+        break;
+      case 'CIRCLE':
+        canvas.add(new fabric.Circle({
+          left: (p[10]||0), top: -(p[20]||0), radius: p[40]||10,
+          fill: 'transparent', stroke: layer.color, strokeWidth: 1,
+          originX: 'center', originY: 'center', _cadLayer: layer.id,
+        }));
+        break;
+      case 'TEXT':
+      case 'MTEXT':
+        canvas.add(new fabric.Text(p[1] || '', {
+          left: (p[10]||0), top: -(p[20]||0),
+          fontSize: (p[40] || 10), fill: layer.color,
+          fontFamily: 'JetBrains Mono', _cadLayer: layer.id,
+        }));
+        break;
+    }
+  });
+
+  canvas.renderAll();
+  saveUndoState();
+  toast(`Importováno ${entities.length} entit z DXF`);
+}
+
+// ── EXPORT PDF ─────────────────────────────────────────────────────────────
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const paper = CAD.paperSize;
+  const sizes = {
+    A4: [210, 297], A3: [297, 420], A2: [420, 594],
+    A1: [594, 841], A0: [841, 1189]
+  };
+  const [w, h] = sizes[paper] || sizes.A3;
+
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [h, w] });
+
+  // Render canvas to image
+  const dataUrl = canvas.toDataURL({ format: 'png', multiplier: 2 });
+  pdf.addImage(dataUrl, 'PNG', 10, 10, h - 20, w - 50);
+
+  // Draw title block
+  const tb = CAD.titleBlock;
+  const bx = h - 180;
+  const by = w - 40;
+  const bw = 170;
+  const bh = 35;
+
+  pdf.setDrawColor(0);
+  pdf.setLineWidth(0.3);
+  pdf.rect(bx, by, bw, bh);
+  pdf.line(bx, by + 10, bx + bw, by + 10);
+  pdf.line(bx, by + 20, bx + bw, by + 20);
+  pdf.line(bx + 85, by, bx + 85, by + bh);
+
+  pdf.setFontSize(7);
+  pdf.setTextColor(100);
+  pdf.text('Projekt:', bx + 2, by + 4);
+  pdf.text('Výkres:', bx + 2, by + 14);
+  pdf.text('Měřítko:', bx + 2, by + 24);
+  pdf.text('Vypracoval:', bx + 88, by + 14);
+  pdf.text('Datum:', bx + 88, by + 24);
+  pdf.text('Stupeň:', bx + 140, by + 24);
+  pdf.text('Č. výkresu:', bx + 88, by + 4);
+
+  pdf.setFontSize(9);
+  pdf.setTextColor(0);
+  pdf.text(tb.projectName || '', bx + 2, by + 8);
+  pdf.text(tb.drawingTitle || '', bx + 2, by + 18);
+  pdf.text(CAD.scale, bx + 2, by + 28);
+  pdf.text(tb.drawingNumber || '', bx + 88, by + 8);
+  pdf.text(tb.author || '', bx + 88, by + 18);
+  pdf.text(tb.date || '', bx + 88, by + 28);
+  pdf.text(tb.stage || '', bx + 140, by + 28);
+
+  const fileName = (tb.drawingNumber || 'besix-cad') + '.pdf';
+  pdf.save(fileName);
+  toast('PDF exportováno: ' + fileName);
+}
+
+// ── EXPORT DXF ─────────────────────────────────────────────────────────────
+function exportDXF() {
+  let dxf = '0\nSECTION\n2\nENTITIES\n';
+  canvas.getObjects().forEach(obj => {
+    if (obj.excludeFromExport) return;
+    if (obj.type === 'line') {
+      dxf += `0\nLINE\n8\n${obj._cadLayer || '0'}\n`;
+      dxf += `10\n${obj.x1}\n20\n${-obj.y1}\n30\n0\n`;
+      dxf += `11\n${obj.x2}\n21\n${-obj.y2}\n31\n0\n`;
+    } else if (obj.type === 'rect') {
+      // Export as 4 lines
+      const l = obj.left, t = obj.top, w = obj.width * (obj.scaleX||1), h = obj.height * (obj.scaleY||1);
+      const pts = [[l,t],[l+w,t],[l+w,t+h],[l,t+h]];
+      for (let i = 0; i < 4; i++) {
+        const [x1,y1] = pts[i];
+        const [x2,y2] = pts[(i+1)%4];
+        dxf += `0\nLINE\n8\n${obj._cadLayer || '0'}\n`;
+        dxf += `10\n${x1}\n20\n${-y1}\n30\n0\n`;
+        dxf += `11\n${x2}\n21\n${-y2}\n31\n0\n`;
+      }
+    } else if (obj.type === 'circle') {
+      dxf += `0\nCIRCLE\n8\n${obj._cadLayer || '0'}\n`;
+      dxf += `10\n${obj.left}\n20\n${-obj.top}\n30\n0\n`;
+      dxf += `40\n${obj.radius}\n`;
+    } else if (obj.type === 'i-text' || obj.type === 'text') {
+      dxf += `0\nTEXT\n8\n${obj._cadLayer || '0'}\n`;
+      dxf += `10\n${obj.left}\n20\n${-obj.top}\n30\n0\n`;
+      dxf += `40\n${obj.fontSize || 10}\n`;
+      dxf += `1\n${obj.text || ''}\n`;
+    }
+  });
+  dxf += '0\nENDSEC\n0\nEOF\n';
+
+  const blob = new Blob([dxf], { type: 'application/dxf' });
+  const name = (CAD.titleBlock.drawingNumber || 'besix-cad') + '.dxf';
+  saveAs(blob, name);
+  toast('DXF exportováno: ' + name);
+}
+
+// ── EXPORT PNG ─────────────────────────────────────────────────────────────
+function exportPNG() {
+  const dataUrl = canvas.toDataURL({ format: 'png', multiplier: 2 });
+  const link = document.createElement('a');
+  link.download = (CAD.titleBlock.drawingNumber || 'besix-cad') + '.png';
+  link.href = dataUrl;
+  link.click();
+  toast('PNG exportováno');
+}
+
+// ── TITLE BLOCK MODAL ──────────────────────────────────────────────────────
+function openTitleBlockModal() {
+  const tb = CAD.titleBlock;
+  document.getElementById('tb_projectName').value = tb.projectName || '';
+  document.getElementById('tb_drawingNumber').value = tb.drawingNumber || '';
+  document.getElementById('tb_drawingTitle').value = tb.drawingTitle || '';
+  document.getElementById('tb_stage').value = tb.stage || 'DPS';
+  document.getElementById('tb_author').value = tb.author || '';
+  document.getElementById('tb_checker').value = tb.checker || '';
+  document.getElementById('tb_investor').value = tb.investor || '';
+  document.getElementById('tb_date').value = tb.date || new Date().toISOString().split('T')[0];
+  document.getElementById('titleBlockModal').classList.add('open');
+}
+
+function closeTitleBlockModal() {
+  document.getElementById('titleBlockModal').classList.remove('open');
+}
+
+function saveTitleBlock() {
+  CAD.titleBlock.projectName = document.getElementById('tb_projectName').value;
+  CAD.titleBlock.drawingNumber = document.getElementById('tb_drawingNumber').value;
+  CAD.titleBlock.drawingTitle = document.getElementById('tb_drawingTitle').value;
+  CAD.titleBlock.stage = document.getElementById('tb_stage').value;
+  CAD.titleBlock.author = document.getElementById('tb_author').value;
+  CAD.titleBlock.checker = document.getElementById('tb_checker').value;
+  CAD.titleBlock.investor = document.getElementById('tb_investor').value;
+  CAD.titleBlock.date = document.getElementById('tb_date').value;
+
+  // Logo
+  const logoInput = document.getElementById('tb_logo');
+  if (logoInput.files.length > 0) {
+    const reader = new FileReader();
+    reader.onload = (e) => { CAD.titleBlock.logoData = e.target.result; };
+    reader.readAsDataURL(logoInput.files[0]);
+  }
+
+  document.getElementById('diName').textContent = CAD.titleBlock.drawingTitle || CAD.titleBlock.drawingNumber || 'Nový výkres';
+  closeTitleBlockModal();
+  autoSave();
+  toast('Razítko uloženo');
+}
+
+// ── IndexedDB PERSISTENCE ──────────────────────────────────────────────────
+const IDB_NAME = 'besix_cad';
+const IDB_STORE = 'drawings';
+const IDB_KEY = 'current';
+
+function openIDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(IDB_STORE); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function autoSave() {
+  try {
+    const db = await openIDB();
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    const data = {
+      canvasJSON: canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']),
+      cad: { scale: CAD.scale, paperSize: CAD.paperSize, gridSize: CAD.gridSize, layers: CAD.layers, titleBlock: CAD.titleBlock },
+      _ts: Date.now(),
+    };
+    store.put(data, IDB_KEY);
+    db.close();
+  } catch (e) { console.warn('Autosave failed:', e); }
+}
+
+async function loadFromIndexedDB() {
+  try {
+    const db = await openIDB();
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.get(IDB_KEY);
+    req.onsuccess = () => {
+      if (!req.result) { db.close(); return; }
+      const data = req.result;
+      if (data.cad) {
+        Object.assign(CAD, { scale: data.cad.scale, paperSize: data.cad.paperSize, gridSize: data.cad.gridSize });
+        if (data.cad.layers) CAD.layers = data.cad.layers;
+        if (data.cad.titleBlock) CAD.titleBlock = data.cad.titleBlock;
+        document.getElementById('scaleSelect').value = CAD.scale;
+        document.getElementById('gridSizeInput').value = CAD.gridSize;
+        document.getElementById('paperSelect').value = CAD.paperSize;
+        document.getElementById('diScale').textContent = CAD.scale;
+        document.getElementById('diName').textContent = CAD.titleBlock.drawingTitle || CAD.titleBlock.drawingNumber || 'Nový výkres';
+        renderLayers();
+      }
+      if (data.canvasJSON) {
+        canvas.loadFromJSON(data.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
+      }
+      db.close();
+      toast('Obnoveno z poslední session');
+    };
+    req.onerror = () => db.close();
+  } catch (e) { console.warn('Load failed:', e); }
+}
+
+// Autosave every 60s
+setInterval(autoSave, 60000);
+
+// Warn on close
+window.addEventListener('beforeunload', (e) => {
+  autoSave();
+  if (CAD.undoStack.length > 0) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+// ── TOAST ──────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+bootAuth();
+</script>
+</body>
+</html>
