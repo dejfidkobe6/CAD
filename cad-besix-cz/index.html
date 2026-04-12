@@ -742,14 +742,14 @@ let _gridLines = [];
 async function bootAuth() {
   let res;
   try {
-    res = await fetch('/api/auth.php?action=me', { credentials: 'include' });
+    res = await fetch('https://board.besix.cz/api/auth.php?action=me', { credentials: 'include' });
   } catch {
     // No PHP backend (local dev) — start offline
     startOffline();
     return;
   }
   if (!res.ok) {
-    window.location.href = '/login.php?redirect=cad';
+    window.location.href = 'https://board.besix.cz/login.php?redirect=https://cad.besix.cz';
     return;
   }
   const data = await res.json();
@@ -778,7 +778,7 @@ function applyUser() {
 async function logout() {
   if (!confirm('Odhlásit se?')) return;
   try { await fetch('/api/auth.php?action=logout', { method: 'POST', credentials: 'include' }); } catch {}
-  window.location.href = '/login.php';
+  window.location.href = 'https://board.besix.cz/login.php';
 }
 
 // ── INIT CAD ───────────────────────────────────────────────────────────────
