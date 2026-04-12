@@ -1000,6 +1000,21 @@ function initCAD() {
   setupKeyboard();
   loadFromIndexedDB();
 
+  // Initialize first drawing tab
+  if (_drawingTabs.length === 0) {
+    _tabCounter++;
+    const firstTab = {
+      id: _tabCounter, name: 'Nový výkres',
+      canvasJSON: null, scale: '1:100', paperSize: 'A3', gridSize: 100,
+      layers: JSON.parse(JSON.stringify(CAD.layers)),
+      titleBlock: JSON.parse(JSON.stringify(CAD.titleBlock)),
+      undoStack: [], redoStack: [],
+    };
+    _drawingTabs.push(firstTab);
+    _activeTabId = firstTab.id;
+    renderTabs();
+  }
+
   // Set initial date
   document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
 }
@@ -1506,6 +1521,36 @@ function setupKeyboard() {
     // Skip if typing in input
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
+    // Coordinate input mode
+    if (_cmdActive) {
+      if (e.key === 'Escape') {
+        _cmdActive = false; _cmdBuffer = '';
+        updateCmdDisplay(); return;
+      }
+      if (e.key === 'Enter') {
+        applyCmdCoords();
+        _cmdActive = false; _cmdBuffer = '';
+        updateCmdDisplay(); return;
+      }
+      if (e.key === 'Backspace') {
+        _cmdBuffer = _cmdBuffer.slice(0, -1);
+        if (!_cmdBuffer) _cmdActive = false;
+        updateCmdDisplay(); return;
+      }
+      if (/^[\d\.\,\-]$/.test(e.key)) {
+        _cmdBuffer += e.key;
+        updateCmdDisplay(); return;
+      }
+      return;
+    }
+    // Start coordinate input when user types a digit (not in input field, tool active)
+    if (/^[\d\-]$/.test(e.key) && !e.ctrlKey && !e.metaKey && _activeTool !== 'select') {
+      _cmdActive = true;
+      _cmdBuffer = e.key;
+      updateCmdDisplay();
+      e.preventDefault(); return;
+    }
+
     const key = e.key.toLowerCase();
     const ctrl = e.ctrlKey || e.metaKey;
 
@@ -1644,6 +1689,7 @@ function saveUndoState() {
   CAD.undoStack.push(JSON.stringify(json));
   if (CAD.undoStack.length > 50) CAD.undoStack.shift();
   CAD.redoStack = [];
+  if (_activeTabId) { const t = _drawingTabs.find(x=>x.id===_activeTabId); if(t){t.undoStack=CAD.undoStack;t.redoStack=[];} }
   autoSave();
 }
 
@@ -2027,6 +2073,11 @@ async function autoSave() {
     const data = {
       canvasJSON: canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']),
       cad: { scale: CAD.scale, paperSize: CAD.paperSize, gridSize: CAD.gridSize, layers: CAD.layers, titleBlock: CAD.titleBlock },
+      tabs: _drawingTabs.map(t => t.id === _activeTabId
+        ? { ...t, canvasJSON: canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']), scale: CAD.scale, paperSize: CAD.paperSize, gridSize: CAD.gridSize, layers: JSON.parse(JSON.stringify(CAD.layers)), titleBlock: JSON.parse(JSON.stringify(CAD.titleBlock)) }
+        : t),
+      activeTabId: _activeTabId,
+      tabCounter: _tabCounter,
       _ts: Date.now(),
     };
     store.put(data, IDB_KEY);
@@ -2053,6 +2104,33 @@ async function loadFromIndexedDB() {
         document.getElementById('diScale').textContent = CAD.scale;
         document.getElementById('diName').textContent = CAD.titleBlock.drawingTitle || CAD.titleBlock.drawingNumber || 'Nový výkres';
         renderLayers();
+      }
+      if (data.tabs && data.tabs.length > 0) {
+        _drawingTabs = data.tabs;
+        _activeTabId = data.activeTabId || data.tabs[0].id;
+        _tabCounter = data.tabCounter || data.tabs.length;
+        const activeTab = _drawingTabs.find(t => t.id === _activeTabId) || _drawingTabs[0];
+        _activeTabId = activeTab.id;
+        CAD.scale = activeTab.scale || CAD.scale;
+        CAD.paperSize = activeTab.paperSize || CAD.paperSize;
+        CAD.gridSize = activeTab.gridSize || CAD.gridSize;
+        if (activeTab.layers) CAD.layers = activeTab.layers;
+        if (activeTab.titleBlock) CAD.titleBlock = activeTab.titleBlock;
+        CAD.undoStack = activeTab.undoStack || [];
+        CAD.redoStack = activeTab.redoStack || [];
+        document.getElementById('scaleSelect').value = CAD.scale;
+        document.getElementById('gridSizeInput').value = CAD.gridSize;
+        document.getElementById('paperSelect').value = CAD.paperSize;
+        document.getElementById('diScale').textContent = CAD.scale;
+        document.getElementById('diName').textContent = activeTab.name;
+        renderLayers();
+        renderTabs();
+        if (activeTab.canvasJSON) {
+          canvas.loadFromJSON(activeTab.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
+        }
+        db.close();
+        toast('Obnoveno z poslední session');
+        return;
       }
       if (data.canvasJSON) {
         canvas.loadFromJSON(data.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
