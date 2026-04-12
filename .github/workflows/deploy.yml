@@ -19,12 +19,17 @@ jobs:
 
       - name: Injektovat DB credentials
         run: |
-          for file in cad-besix-cz/api/cad.php cad-besix-cz/api/auth.php; do
+          for file in cad-besix-cz/api/cad.php cad-besix-cz/api/auth.php cad-besix-cz/login.php; do
             sed -i "s|\$DB_HOST = '.*';|\$DB_HOST = '${{ secrets.DB_HOST }}';|" $file
             sed -i "s|\$DB_NAME = '.*';|\$DB_NAME = '${{ secrets.DB_NAME }}';|" $file
             sed -i "s|\$DB_USER = '.*';|\$DB_USER = '${{ secrets.DB_USER }}';|" $file
             sed -i "s|\$DB_PASS = '.*';|\$DB_PASS = '${{ secrets.DB_PASS }}';|" $file
           done
+
+      - name: Injektovat Google OAuth credentials
+        run: |
+          sed -i "s|GOOGLE_CLIENT_ID_PLACEHOLDER|${{ secrets.GOOGLE_CLIENT_ID }}|" cad-besix-cz/login.php
+          sed -i "s|GOOGLE_CLIENT_SECRET_PLACEHOLDER|${{ secrets.GOOGLE_CLIENT_SECRET }}|" cad-besix-cz/login.php
 
       - name: Deploy přes FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5

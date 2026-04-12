@@ -749,7 +749,7 @@ async function bootAuth() {
     return;
   }
   if (!res.ok) {
-    window.location.href = 'https://board.besix.cz/login.php?redirect=https://cad.besix.cz';
+    window.location.href = '/login.php';
     return;
   }
   const data = await res.json();
@@ -778,7 +778,7 @@ function applyUser() {
 async function logout() {
   if (!confirm('Odhlásit se?')) return;
   try { await fetch('/api/auth.php?action=logout', { method: 'POST', credentials: 'include' }); } catch {}
-  window.location.href = 'https://board.besix.cz/login.php';
+  window.location.href = '/login.php';
 }
 
 // ── INIT CAD ───────────────────────────────────────────────────────────────
