@@ -14,7 +14,7 @@ $DB_USER = 'besix_user';
 $DB_PASS = 'CHANGE_ME';
 
 session_set_cookie_params([
-    'lifetime' => 604800,
+    'lifetime' => 0,          // session cookie — pamatování řídí remember_token
     'path'     => '/',
     'domain'   => '.besix.cz',
     'secure'   => true,
@@ -23,12 +23,44 @@ session_set_cookie_params([
 ]);
 session_start();
 
-if (!empty($_SESSION['user_id'])) {
-    header('Location: /');
-    exit;
+// ── Remember me token ─────────────────────────────────────────────────────────
+define('REMEMBER_COOKIE', 'besix_remember');
+define('REMEMBER_DAYS', 30);
+
+function setRememberCookie(string $token): void {
+    setcookie(REMEMBER_COOKIE, $token, [
+        'expires'  => time() + REMEMBER_DAYS * 86400,
+        'path'     => '/',
+        'domain'   => '.besix.cz',
+        'secure'   => true,
+        'httponly'  => true,
+        'samesite'  => 'Lax',
+    ]);
 }
 
-$error = '';
+function clearRememberCookie(): void {
+    setcookie(REMEMBER_COOKIE, '', ['expires' => time() - 3600, 'path' => '/', 'domain' => '.besix.cz']);
+}
+
+function loginByRememberToken(PDO $pdo): ?int {
+    $token = $_COOKIE[REMEMBER_COOKIE] ?? null;
+    if (!$token) return null;
+    $stmt = $pdo->prepare('SELECT user_id FROM remember_tokens WHERE token = ? AND expires_at > NOW()');
+    $stmt->execute([$token]);
+    $row = $stmt->fetch();
+    return $row ? (int)$row['user_id'] : null;
+}
+
+function saveRememberToken(PDO $pdo, int $userId): string {
+    $token = bin2hex(random_bytes(32));
+    $pdo->prepare('INSERT INTO remember_tokens (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ' . REMEMBER_DAYS . ' DAY))')
+        ->execute([$userId, $token]);
+    return $token;
+}
+
+function deleteRememberToken(PDO $pdo, string $token): void {
+    $pdo->prepare('DELETE FROM remember_tokens WHERE token = ?')->execute([$token]);
+}
 
 function getDB(string $host, string $name, string $user, string $pass): PDO {
     return new PDO(
@@ -37,6 +69,32 @@ function getDB(string $host, string $name, string $user, string $pass): PDO {
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
     );
 }
+
+// ── Auto-login přes remember token ───────────────────────────────────────────
+if (empty($_SESSION['user_id']) && !empty($_COOKIE[REMEMBER_COOKIE])) {
+    try {
+        $pdo = getDB($DB_HOST, $DB_NAME, $DB_USER, $DB_PASS);
+        $userId = loginByRememberToken($pdo);
+        if ($userId) {
+            $_SESSION['user_id'] = $userId;
+            // Obnov token (rolling)
+            deleteRememberToken($pdo, $_COOKIE[REMEMBER_COOKIE]);
+            $newToken = saveRememberToken($pdo, $userId);
+            setRememberCookie($newToken);
+            header('Location: /');
+            exit;
+        } else {
+            clearRememberCookie();
+        }
+    } catch (PDOException $e) { /* tiché selhání */ }
+}
+
+if (!empty($_SESSION['user_id'])) {
+    header('Location: /');
+    exit;
+}
+
+$error = '';
 
 // ── Email/heslo přihlášení ────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'], $_POST['password'])) {
@@ -56,6 +114,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'], $_POST['pass
                 $error = 'Nesprávný e-mail nebo heslo.';
             } else {
                 $_SESSION['user_id'] = $user['id'];
+                if (!empty($_POST['remember'])) {
+                    $token = saveRememberToken($pdo, $user['id']);
+                    setRememberCookie($token);
+                }
                 header('Location: /');
                 exit;
             }
@@ -103,6 +165,9 @@ if (isset($_GET['code'])) {
                 }
 
                 $_SESSION['user_id'] = $userId;
+                // Google login = vždy zapamatovat (30 dní)
+                $token = saveRememberToken($pdo, $userId);
+                setRememberCookie($token);
                 header('Location: /');
                 exit;
             } catch (PDOException $e) {
@@ -265,6 +330,14 @@ function httpGet(string $url, string $token): array {
       background: rgba(255,255,255,0.07);
     }
 
+    .remember-row {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: rgba(255,255,255,0.45);
+      cursor: pointer; margin: 4px 0 10px;
+    }
+    .remember-row input[type=checkbox] { accent-color: #c9922a; width: 14px; height: 14px; cursor: pointer; }
+    .remember-row:hover span { color: rgba(255,255,255,0.7); }
+
     .btn-primary {
       width: 100%;
       padding: 13px 20px;
@@ -359,6 +432,10 @@ function httpGet(string $url, string $token): array {
         <label>Heslo</label>
         <input type="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
       </div>
+      <label class="remember-row">
+        <input type="checkbox" name="remember" value="1">
+        <span>Zapamatovat si mě na 30 dní</span>
+      </label>
       <button type="submit" class="btn-primary">Přihlásit se</button>
     </form>
 

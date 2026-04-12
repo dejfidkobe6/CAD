@@ -4,6 +4,21 @@
 -- Sdílené tabulky: users, projects, project_members, sessions
 -- ============================================================
 
+-- 0. Remember me tokeny (přihlášení na 30 dní)
+CREATE TABLE IF NOT EXISTS remember_tokens (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT NOT NULL,
+  token      VARCHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_rt_token (token),
+  INDEX idx_rt_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Automatické mazání expirovaných tokenů (spusť jako event nebo cron)
+-- DELETE FROM remember_tokens WHERE expires_at < NOW();
+
 -- 1. Šablony razítek (per user — uživatel si nese šablony napříč projekty)
 CREATE TABLE IF NOT EXISTS cad_title_block_templates (
   id           INT AUTO_INCREMENT PRIMARY KEY,
