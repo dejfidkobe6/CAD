@@ -40,6 +40,7 @@
   --panel-w: 220px;
   --toolbar-w: 44px;
   --topbar-h: 40px;
+  --tabbar-h: 34px;
   --statusbar-h: 28px;
 
   --layer-nosne: #ff4444;
@@ -67,10 +68,11 @@ body {
 /* ─── LAYOUT ─── */
 #cadApp {
   display: grid;
-  grid-template-rows: var(--topbar-h) 1fr var(--statusbar-h);
+  grid-template-rows: var(--topbar-h) var(--tabbar-h) 1fr var(--statusbar-h);
   grid-template-columns: var(--toolbar-w) 1fr var(--panel-w);
   grid-template-areas:
     "topbar topbar topbar"
+    "tabs   tabs   tabs"
     "toolbar canvas panel"
     "status status status";
   height: 100vh; width: 100vw;
@@ -153,6 +155,55 @@ body {
   background: var(--green);
   flex-shrink: 0;
 }
+
+/* ─── TAB BAR ─── */
+#tabBar {
+  grid-area: tabs;
+  display: flex; align-items: center;
+  background: #0a0e06;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none;
+  z-index: 90; user-select: none;
+}
+#tabBar::-webkit-scrollbar { display: none; }
+#tabsList { display: flex; align-items: stretch; height: 100%; }
+.tab-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 12px 0 14px;
+  font-size: 11px; font-weight: 500;
+  color: var(--text2);
+  border-right: 1px solid var(--border);
+  cursor: pointer; white-space: nowrap;
+  min-width: 100px; max-width: 180px;
+  transition: background 0.12s, color 0.12s;
+  position: relative;
+}
+.tab-item:hover { background: var(--surface2); color: var(--text); }
+.tab-item.active {
+  background: var(--toolbar-bg);
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+}
+.tab-item .tab-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis;
+}
+.tab-item .tab-close {
+  opacity: 0; font-size: 12px; line-height: 1;
+  color: var(--text2); padding: 2px 2px;
+  border-radius: 3px;
+  transition: opacity 0.1s, background 0.1s;
+}
+.tab-item:hover .tab-close { opacity: 1; }
+.tab-item .tab-close:hover { background: rgba(255,59,48,0.2); color: var(--danger); }
+.tab-new-btn {
+  padding: 0 14px; font-size: 18px; color: var(--text2);
+  background: none; border: none; cursor: pointer;
+  line-height: var(--tabbar-h); height: 100%;
+  transition: color 0.12s, background 0.12s;
+  flex-shrink: 0;
+}
+.tab-new-btn:hover { color: var(--text); background: var(--surface2); }
 
 /* ─── LEFT TOOLBAR ─── */
 #toolbar {
@@ -325,6 +376,16 @@ body {
 }
 .status-toggle:hover { background: var(--surface2); }
 .status-toggle.on { color: var(--accent); background: rgba(200,145,42,0.12); }
+.status-cmd {
+  display: flex; align-items: center;
+  padding: 0 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: var(--accent);
+  min-width: 140px;
+  border-left: 1px solid var(--border);
+}
+.status-cmd-label { color: var(--text2); margin-right: 6px; font-size: 10px; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 .status-spacer { flex: 1; }
 
 /* ─── MODAL ─── */
@@ -516,6 +577,12 @@ body {
     </div>
   </div>
 
+  <!-- TAB BAR -->
+  <div id="tabBar">
+    <div id="tabsList"></div>
+    <button class="tab-new-btn" onclick="addDrawingTab()" title="Nový výkres (Ctrl+N)">+</button>
+  </div>
+
   <!-- LEFT TOOLBAR -->
   <div id="toolbar">
     <button class="tool-btn active" data-tool="select" data-tooltip="Výběr (V)" onclick="setTool('select')">
@@ -637,6 +704,9 @@ body {
   <div id="statusBar">
     <div class="status-item">X: <span id="cursorX">0</span></div>
     <div class="status-item">Y: <span id="cursorY">0</span></div>
+    <div class="status-cmd" id="cmdLine" style="display:none">
+      <span class="status-cmd-label">XY›</span><span id="cmdBuffer"></span><span style="animation:blink 1s step-end infinite">▌</span>
+    </div>
     <div class="status-item" style="margin-left:8px;">
       <span class="status-toggle on" id="snapToggle" onclick="toggleSnap()">SNAP</span>
     </div>
@@ -699,6 +769,124 @@ body {
    BeSix CAD — JavaScript
    MVP: Canvas, drawing tools, layers, export, auth
    ═══════════════════════════════════════════════════════════════════════════ */
+
+// ── Drawing Tabs ────────────────────────────────────────────────────────────
+let _drawingTabs = [];
+let _activeTabId = null;
+let _tabCounter = 0;
+
+function createTabData(name = 'Nový výkres') {
+  _tabCounter++;
+  return {
+    id: _tabCounter,
+    name,
+    canvasJSON: null,
+    scale: '1:100',
+    paperSize: 'A3',
+    gridSize: 100,
+    layers: JSON.parse(JSON.stringify(CAD.layers)),
+    titleBlock: { projectName:'', drawingNumber:'', drawingTitle:'',
+      stage:'DPS', author: _apiUser?.name || '', checker:'', investor:'', date:'', logoData: null },
+    undoStack: [],
+    redoStack: [],
+  };
+}
+
+function renderTabs() {
+  const list = document.getElementById('tabsList');
+  if (!list) return;
+  list.innerHTML = _drawingTabs.map(t => `
+    <div class="tab-item ${t.id === _activeTabId ? 'active' : ''}" onclick="switchDrawingTab(${t.id})">
+      <span class="tab-name" title="${t.name}">${t.name}</span>
+      <span class="tab-close" onclick="event.stopPropagation();closeDrawingTab(${t.id})" title="Zavřít">×</span>
+    </div>
+  `).join('');
+}
+
+function addDrawingTab(name = 'Nový výkres') {
+  // Save current tab first
+  if (_activeTabId !== null) saveCurrentTabState();
+  const tab = createTabData(name);
+  _drawingTabs.push(tab);
+  switchDrawingTab(tab.id);
+}
+
+function switchDrawingTab(id) {
+  if (id === _activeTabId) return;
+  if (_activeTabId !== null) saveCurrentTabState();
+  _activeTabId = id;
+  const tab = _drawingTabs.find(t => t.id === id);
+  if (!tab) return;
+
+  // Restore CAD settings
+  CAD.scale = tab.scale;
+  CAD.paperSize = tab.paperSize;
+  CAD.gridSize = tab.gridSize;
+  CAD.layers = JSON.parse(JSON.stringify(tab.layers));
+  CAD.titleBlock = JSON.parse(JSON.stringify(tab.titleBlock));
+  CAD.undoStack = tab.undoStack;
+  CAD.redoStack = tab.redoStack;
+
+  // Update UI
+  const scaleEl = document.getElementById('scaleSelect');
+  if (scaleEl) scaleEl.value = CAD.scale;
+  const gridEl = document.getElementById('gridSizeInput');
+  if (gridEl) gridEl.value = CAD.gridSize;
+  const paperEl = document.getElementById('paperSelect');
+  if (paperEl) paperEl.value = CAD.paperSize;
+  document.getElementById('diScale').textContent = CAD.scale;
+  document.getElementById('diName').textContent = tab.name;
+  renderLayers();
+  renderTabs();
+
+  // Load canvas
+  if (tab.canvasJSON) {
+    canvas.loadFromJSON(tab.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
+  } else {
+    canvas.clear();
+    canvas.backgroundColor = '#1a1a2e';
+    drawGrid();
+    canvas.renderAll();
+  }
+}
+
+function saveCurrentTabState() {
+  const tab = _drawingTabs.find(t => t.id === _activeTabId);
+  if (!tab || !canvas) return;
+  tab.canvasJSON = canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']);
+  tab.scale = CAD.scale;
+  tab.paperSize = CAD.paperSize;
+  tab.gridSize = CAD.gridSize;
+  tab.layers = JSON.parse(JSON.stringify(CAD.layers));
+  tab.titleBlock = JSON.parse(JSON.stringify(CAD.titleBlock));
+  tab.undoStack = [...CAD.undoStack];
+  tab.redoStack = [...CAD.redoStack];
+  // Update tab name from titleBlock
+  const name = CAD.titleBlock.drawingTitle || CAD.titleBlock.drawingNumber || tab.name;
+  tab.name = name;
+}
+
+function closeDrawingTab(id) {
+  if (_drawingTabs.length <= 1) {
+    // Last tab — just clear it
+    canvas.clear(); canvas.backgroundColor = '#1a1a2e'; drawGrid(); canvas.renderAll();
+    const tab = _drawingTabs[0];
+    tab.canvasJSON = null; tab.name = 'Nový výkres';
+    CAD.undoStack = []; CAD.redoStack = [];
+    renderTabs();
+    return;
+  }
+  const idx = _drawingTabs.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  _drawingTabs.splice(idx, 1);
+  if (_activeTabId === id) {
+    _activeTabId = null;
+    const next = _drawingTabs[Math.min(idx, _drawingTabs.length - 1)];
+    switchDrawingTab(next.id);
+  } else {
+    renderTabs();
+  }
+}
 
 // ── State ──────────────────────────────────────────────────────────────────
 let _apiUser = null;
@@ -887,15 +1075,21 @@ function setupCanvasEvents() {
     opt.e.stopPropagation();
   });
 
-  // Pan (middle button or Alt+drag)
+  // Zabránit browser auto-scroll při středním tlačítku
+  canvas.upperCanvasEl.addEventListener('mousedown', (e) => {
+    if (e.button === 1) e.preventDefault();
+  });
+
+  // Pan (middle button nebo Alt+drag) — jako AutoCAD
   let _isPanning = false;
   let _panLast = null;
   canvas.on('mouse:down', (opt) => {
     if (opt.e.button === 1 || (opt.e.altKey && opt.e.button === 0)) {
+      opt.e.preventDefault();
       _isPanning = true;
       _panLast = { x: opt.e.clientX, y: opt.e.clientY };
       canvas.selection = false;
-      canvas.setCursor('grab');
+      canvas.setCursor('grabbing');
       return;
     }
     handleToolMouseDown(opt);
@@ -910,6 +1104,13 @@ function setupCanvasEvents() {
       canvas.requestRenderAll();
       _panLast = { x: opt.e.clientX, y: opt.e.clientY };
       return;
+    }
+    // Update snap marker on hover even when not drawing
+    if (!_isPanning && CAD.snapEnabled) {
+      const raw = canvas.getPointer(opt.e);
+      const snap = findObjSnap(raw.x, raw.y);
+      if (snap) showSnapMarker(snap.x, snap.y, snap.snapType);
+      else hideSnapMarker();
     }
     handleToolMouseMove(opt);
   });
@@ -961,13 +1162,107 @@ function getActiveLayer() {
   return CAD.layers.find(l => l.active) || CAD.layers[0];
 }
 
-function getPointer(opt) {
-  const p = canvas.getPointer(opt.e);
-  if (CAD.snapEnabled && CAD.gridSize > 0) {
-    const step = CAD.gridSize * 0.5;
-    p.x = Math.round(p.x / step) * step;
-    p.y = Math.round(p.y / step) * step;
+function getObjSnapPoints(obj) {
+  const pts = [];
+  if (obj.excludeFromExport || !obj.visible) return pts;
+  switch (obj.type) {
+    case 'line':
+      pts.push({ x: obj.x1, y: obj.y1, snapType: 'endpoint' });
+      pts.push({ x: obj.x2, y: obj.y2, snapType: 'endpoint' });
+      pts.push({ x: (obj.x1+obj.x2)/2, y: (obj.y1+obj.y2)/2, snapType: 'midpoint' });
+      break;
+    case 'rect': {
+      const l = obj.left, t = obj.top;
+      const w = obj.width * (obj.scaleX||1), h = obj.height * (obj.scaleY||1);
+      pts.push({ x:l,     y:t,     snapType:'endpoint' });
+      pts.push({ x:l+w,   y:t,     snapType:'endpoint' });
+      pts.push({ x:l+w,   y:t+h,   snapType:'endpoint' });
+      pts.push({ x:l,     y:t+h,   snapType:'endpoint' });
+      pts.push({ x:l+w/2, y:t,     snapType:'midpoint' });
+      pts.push({ x:l+w,   y:t+h/2, snapType:'midpoint' });
+      pts.push({ x:l+w/2, y:t+h,   snapType:'midpoint' });
+      pts.push({ x:l,     y:t+h/2, snapType:'midpoint' });
+      pts.push({ x:l+w/2, y:t+h/2, snapType:'center' });
+      break;
+    }
+    case 'circle': {
+      const cx = obj.left, cy = obj.top;
+      const r = obj.radius * (obj.scaleX||1);
+      pts.push({ x:cx,   y:cy,   snapType:'center' });
+      pts.push({ x:cx+r, y:cy,   snapType:'quadrant' });
+      pts.push({ x:cx-r, y:cy,   snapType:'quadrant' });
+      pts.push({ x:cx,   y:cy+r, snapType:'quadrant' });
+      pts.push({ x:cx,   y:cy-r, snapType:'quadrant' });
+      break;
+    }
+    case 'polyline': {
+      const m = obj.calcTransformMatrix();
+      (obj.points||[]).forEach((p, i, arr) => {
+        const ap = fabric.util.transformPoint(p, m);
+        pts.push({ x: ap.x, y: ap.y, snapType: 'endpoint' });
+        if (i < arr.length - 1) {
+          const np = fabric.util.transformPoint(arr[i+1], m);
+          pts.push({ x:(ap.x+np.x)/2, y:(ap.y+np.y)/2, snapType:'midpoint' });
+        }
+      });
+      break;
+    }
   }
+  return pts;
+}
+
+function findObjSnap(rawX, rawY) {
+  const SNAP_R = 16;
+  let best = null, bestD = SNAP_R;
+  canvas.getObjects().forEach(obj => {
+    getObjSnapPoints(obj).forEach(pt => {
+      const d = Math.hypot(pt.x - rawX, pt.y - rawY);
+      if (d < bestD) { bestD = d; best = pt; }
+    });
+  });
+  return best;
+}
+
+function showSnapMarker(canvasX, canvasY, snapType) {
+  const vpt = canvas.viewportTransform;
+  const sx = canvasX * vpt[0] + vpt[4];
+  const sy = canvasY * vpt[3] + vpt[5];
+  const dot = document.getElementById('snapDot');
+  dot.style.left = sx + 'px';
+  dot.style.top  = sy + 'px';
+  dot.style.display = 'block';
+  // Different colors per snap type
+  const colors = { endpoint:'#00ff88', midpoint:'#ffaa00', center:'#00aaff', quadrant:'#ff44ff' };
+  dot.style.borderColor = colors[snapType] || '#00ff88';
+  dot.style.borderRadius = snapType === 'center' ? '2px' : '50%';
+}
+
+function hideSnapMarker() {
+  document.getElementById('snapDot').style.display = 'none';
+}
+
+function getPointer(opt) {
+  if (opt.e && opt.e._point) return opt.e._point;
+  const raw = canvas.getPointer(opt.e);
+  let p = { x: raw.x, y: raw.y };
+
+  if (CAD.snapEnabled) {
+    const snap = findObjSnap(raw.x, raw.y);
+    if (snap) {
+      p = { x: snap.x, y: snap.y };
+      showSnapMarker(snap.x, snap.y, snap.snapType);
+    } else {
+      const step = CAD.gridSize * 0.5;
+      if (step >= 4) {
+        p.x = Math.round(raw.x / step) * step;
+        p.y = Math.round(raw.y / step) * step;
+      }
+      hideSnapMarker();
+    }
+  } else {
+    hideSnapMarker();
+  }
+
   if (CAD.orthoEnabled && _drawStart) {
     const dx = Math.abs(p.x - _drawStart.x);
     const dy = Math.abs(p.y - _drawStart.y);
@@ -1408,13 +1703,7 @@ function copySelected() {
 }
 
 function newDrawing() {
-  if (!confirm('Vytvořit nový výkres? Neuložené změny budou ztraceny.')) return;
-  canvas.clear();
-  canvas.backgroundColor = '#1a1a2e';
-  CAD.undoStack = [];
-  CAD.redoStack = [];
-  drawGrid();
-  toast('Nový výkres');
+  addDrawingTab();
 }
 
 // ── ZOOM ───────────────────────────────────────────────────────────────────
@@ -1794,6 +2083,53 @@ function toast(msg) {
   el.classList.add('show');
   clearTimeout(el._timer);
   el._timer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── COORDINATE INPUT ───────────────────────────────────────────────────────
+let _cmdBuffer = '';
+let _cmdActive = false;
+
+function updateCmdDisplay() {
+  const line = document.getElementById('cmdLine');
+  const buf  = document.getElementById('cmdBuffer');
+  if (!line || !buf) return;
+  if (_cmdActive) {
+    line.style.display = 'flex';
+    buf.textContent = _cmdBuffer;
+  } else {
+    line.style.display = 'none';
+    buf.textContent = '';
+  }
+}
+
+function applyCmdCoords() {
+  if (!_cmdBuffer) return;
+  const parts = _cmdBuffer.split(',').map(s => parseFloat(s.trim()));
+  const x = isNaN(parts[0]) ? null : parts[0];
+  const y = isNaN(parts[1]) ? null : parts[1];
+  if (x !== null && y !== null) {
+    // Set drawing start point at these canvas coords
+    const fakePoint = { x, y };
+    if (!_isDrawing && _activeTool !== 'select') {
+      // Simulate click at coordinates
+      _isDrawing = true;
+      _drawStart = fakePoint;
+      const layer = getActiveLayer();
+      _tempShape = new fabric.Line([x, y, x, y], {
+        stroke: layer.color, strokeWidth: 1.5,
+        selectable: false, evented: false, _cadLayer: layer.id,
+      });
+      canvas.add(_tempShape);
+      canvas.renderAll();
+      toast(`Start: X=${Math.round(x)}, Y=${Math.round(y)}`);
+    } else if (_isDrawing && _drawStart) {
+      // Complete the current drawing at these coords
+      handleToolMouseDown({ e: { button: 0, clientX: 0, clientY: 0, _synthetic: true, _point: fakePoint } });
+      toast(`Bod: X=${Math.round(x)}, Y=${Math.round(y)}`);
+    }
+  } else if (x !== null) {
+    toast(`X=${Math.round(x)}`);
+  }
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
