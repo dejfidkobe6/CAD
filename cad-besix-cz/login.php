@@ -1,6 +1,6 @@
 <?php
 /**
- * BeSix CAD — Google OAuth login
+ * BeSix CAD — Login
  * Soubor: cad.besix.cz/login.php
  */
 
@@ -28,7 +28,44 @@ if (!empty($_SESSION['user_id'])) {
     exit;
 }
 
-// ── Krok 2: Google vrátil code ────────────────────────────────────────────────
+$error = '';
+
+function getDB(string $host, string $name, string $user, string $pass): PDO {
+    return new PDO(
+        "mysql:host=$host;dbname=$name;charset=utf8mb4",
+        $user, $pass,
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+    );
+}
+
+// ── Email/heslo přihlášení ────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'], $_POST['password'])) {
+    $email    = trim($_POST['email']);
+    $password = $_POST['password'];
+
+    if (!$email || !$password) {
+        $error = 'Vyplňte e-mail a heslo.';
+    } else {
+        try {
+            $pdo  = getDB($DB_HOST, $DB_NAME, $DB_USER, $DB_PASS);
+            $stmt = $pdo->prepare('SELECT id, password FROM users WHERE email = ?');
+            $stmt->execute([$email]);
+            $user = $stmt->fetch();
+
+            if (!$user || !password_verify($password, $user['password'])) {
+                $error = 'Nesprávný e-mail nebo heslo.';
+            } else {
+                $_SESSION['user_id'] = $user['id'];
+                header('Location: /');
+                exit;
+            }
+        } catch (PDOException $e) {
+            $error = 'DB nedostupná.';
+        }
+    }
+}
+
+// ── Google OAuth — callback ───────────────────────────────────────────────────
 if (isset($_GET['code'])) {
     $tokenRes = httpPost('https://oauth2.googleapis.com/token', [
         'code'          => $_GET['code'],
@@ -47,11 +84,7 @@ if (isset($_GET['code'])) {
             $error = 'Nepodařilo se načíst profil z Google.';
         } else {
             try {
-                $pdo = new PDO(
-                    "mysql:host=$DB_HOST;dbname=$DB_NAME;charset=utf8mb4",
-                    $DB_USER, $DB_PASS,
-                    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
-                );
+                $pdo    = getDB($DB_HOST, $DB_NAME, $DB_USER, $DB_PASS);
                 $email  = $profile['email'];
                 $name   = $profile['name'] ?? explode('@', $email)[0];
                 $colors = ['#4A5340','#5C6BC0','#26A69A','#EF5350','#AB47BC','#FFA726','#42A5F5'];
@@ -79,7 +112,7 @@ if (isset($_GET['code'])) {
     }
 }
 
-// ── Krok 1: URL pro Google ────────────────────────────────────────────────────
+// ── Google OAuth URL ──────────────────────────────────────────────────────────
 $googleUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query([
     'client_id'     => $GOOGLE_CLIENT_ID,
     'redirect_uri'  => $REDIRECT_URI,
@@ -123,7 +156,6 @@ function httpGet(string $url, string $token): array {
       padding: 20px;
     }
 
-    /* subtle grid pattern */
     body::before {
       content: '';
       position: fixed; inset: 0;
@@ -149,7 +181,6 @@ function httpGet(string $url, string $token): array {
       text-align: center;
       margin-bottom: 16px;
     }
-
     .logo-wrap img {
       width: 130px;
       height: auto;
@@ -166,11 +197,97 @@ function httpGet(string $url, string $token): array {
       text-transform: uppercase;
     }
 
+    .cad-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(201,146,42,0.1);
+      border: 1px solid rgba(201,146,42,0.25);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #c9922a;
+      letter-spacing: 1px;
+      margin: 0 auto 28px;
+      text-transform: uppercase;
+      width: fit-content;
+    }
+    .cad-badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #c9922a;
+      flex-shrink: 0;
+    }
+
+    .error {
+      background: rgba(255, 59, 48, 0.12);
+      border: 1px solid rgba(255, 59, 48, 0.3);
+      color: #ff6b6b;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      margin-bottom: 18px;
+      text-align: center;
+    }
+
+    /* ── Formulář ── */
+    .form-group {
+      margin-bottom: 14px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      color: rgba(255,255,255,0.88);
+      font-family: 'Montserrat', sans-serif;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .form-group input::placeholder {
+      color: rgba(255,255,255,0.2);
+    }
+    .form-group input:focus {
+      border-color: rgba(201,146,42,0.5);
+      background: rgba(255,255,255,0.07);
+    }
+
+    .btn-primary {
+      width: 100%;
+      padding: 13px 20px;
+      background: #4a5c2a;
+      color: rgba(255,255,255,0.92);
+      border: none;
+      border-radius: 8px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: background 0.15s, transform 0.1s;
+      margin-top: 6px;
+    }
+    .btn-primary:hover { background: #556830; transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+
     .divider {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 20px;
+      margin: 20px 0;
     }
     .divider::before, .divider::after {
       content: '';
@@ -180,7 +297,7 @@ function httpGet(string $url, string $token): array {
     }
     .divider span {
       font-size: 11px;
-      color: rgba(255,255,255,0.35);
+      color: rgba(255,255,255,0.3);
       font-weight: 500;
       letter-spacing: 1px;
     }
@@ -203,64 +320,22 @@ function httpGet(string $url, string $token): array {
       text-decoration: none;
       transition: background 0.15s, transform 0.1s;
     }
-    .btn-google:hover {
-      background: #fff;
-      transform: translateY(-1px);
-    }
+    .btn-google:hover { background: #fff; transform: translateY(-1px); }
     .btn-google:active { transform: translateY(0); }
-
-    .btn-google svg {
-      width: 18px;
-      height: 18px;
-      flex-shrink: 0;
-    }
-
-    .error {
-      background: rgba(255, 59, 48, 0.12);
-      border: 1px solid rgba(255, 59, 48, 0.3);
-      color: #ff6b6b;
-      border-radius: 8px;
-      padding: 12px 16px;
-      font-size: 13px;
-      margin-bottom: 20px;
-      text-align: center;
-    }
+    .btn-google svg { width: 18px; height: 18px; flex-shrink: 0; }
 
     .footer {
       text-align: center;
-      margin-top: 32px;
+      margin-top: 28px;
       font-size: 11px;
       color: rgba(255,255,255,0.2);
       letter-spacing: 0.5px;
-    }
-
-    .cad-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(201,146,42,0.1);
-      border: 1px solid rgba(201,146,42,0.25);
-      border-radius: 20px;
-      padding: 6px 14px;
-      font-size: 11px;
-      font-weight: 600;
-      color: #c9922a;
-      letter-spacing: 1px;
-      margin: 0 auto 32px;
-      text-transform: uppercase;
-      width: fit-content;
-      display: flex;
-    }
-    .cad-badge::before {
-      content: '';
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: #c9922a;
     }
   </style>
 </head>
 <body>
   <div class="card">
+
     <div class="logo-wrap">
       <img src="/besix_logo_highres_transparent.png" alt="BeSix" onerror="this.style.display='none'">
     </div>
@@ -269,11 +344,25 @@ function httpGet(string $url, string $token): array {
 
     <div class="cad-badge">Stavební editor</div>
 
-    <?php if (!empty($error)): ?>
+    <?php if ($error): ?>
       <div class="error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
-    <div class="divider"><span>přihlaste se pomocí</span></div>
+    <!-- Email / heslo -->
+    <form method="POST" action="/login.php">
+      <div class="form-group">
+        <label>E-mail</label>
+        <input type="email" name="email" placeholder="vas@email.cz" autocomplete="email" required
+               value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
+      </div>
+      <div class="form-group">
+        <label>Heslo</label>
+        <input type="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn-primary">Přihlásit se</button>
+    </form>
+
+    <div class="divider"><span>nebo</span></div>
 
     <a href="<?= htmlspecialchars($googleUrl) ?>" class="btn-google">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
