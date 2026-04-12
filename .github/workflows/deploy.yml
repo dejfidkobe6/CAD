@@ -30,7 +30,6 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./cad-besix-cz/
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
           exclude: |
             **/.git*
             **/.git*/**
