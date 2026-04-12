@@ -16,6 +16,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Injektovat DB credentials do cad.php
+        run: |
+          sed -i "s|\$DB_HOST = '.*';|\$DB_HOST = '${{ secrets.DB_HOST }}';|" cad-besix-cz/api/cad.php
+          sed -i "s|\$DB_NAME = '.*';|\$DB_NAME = '${{ secrets.DB_NAME }}';|" cad-besix-cz/api/cad.php
+          sed -i "s|\$DB_USER = '.*';|\$DB_USER = '${{ secrets.DB_USER }}';|" cad-besix-cz/api/cad.php
+          sed -i "s|\$DB_PASS = '.*';|\$DB_PASS = '${{ secrets.DB_PASS }}';|" cad-besix-cz/api/cad.php
+
       - name: Deploy přes FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
