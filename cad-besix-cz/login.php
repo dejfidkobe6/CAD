@@ -147,27 +147,23 @@ function httpGet(string $url, string $token): array {
 
     .logo-wrap {
       text-align: center;
-      margin-bottom: 28px;
+      margin-bottom: 16px;
     }
 
     .logo-wrap img {
-      width: 80px;
+      width: 130px;
       height: auto;
       filter: brightness(0) invert(1);
     }
 
     .app-title {
       text-align: center;
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 4px;
-      color: rgba(255,255,255,0.5);
-      margin-bottom: 36px;
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: 8px;
+      color: rgba(255,255,255,0.95);
+      margin-bottom: 32px;
       text-transform: uppercase;
-    }
-
-    .app-title span {
-      color: #c9922a;
     }
 
     .divider {
@@ -269,7 +265,7 @@ function httpGet(string $url, string $token): array {
       <img src="/besix_logo_highres_transparent.png" alt="BeSix" onerror="this.style.display='none'">
     </div>
 
-    <div class="app-title">Be<span>Six</span> CAD</div>
+    <div class="app-title">CAD</div>
 
     <div class="cad-badge">Stavební editor</div>
 
