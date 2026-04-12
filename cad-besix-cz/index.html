@@ -742,7 +742,7 @@ let _gridLines = [];
 async function bootAuth() {
   let res;
   try {
-    res = await fetch('https://board.besix.cz/api/auth.php?action=me', { credentials: 'include' });
+    res = await fetch('/api/auth.php?action=me', { credentials: 'include' });
   } catch {
     // No PHP backend (local dev) — start offline
     startOffline();

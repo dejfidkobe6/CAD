@@ -51,7 +51,6 @@ CREATE TABLE IF NOT EXISTS cad_drawing_metadata (
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (template_id) REFERENCES cad_title_block_templates(id) ON DELETE SET NULL,
   INDEX idx_cad_dm_project (project_id),
   INDEX idx_cad_dm_user (user_id)
