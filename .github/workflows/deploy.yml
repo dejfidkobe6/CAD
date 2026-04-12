@@ -1,0 +1,32 @@
+name: Deploy cad.besix.cz
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'cad-besix-cz/**'
+
+jobs:
+  deploy:
+    name: Deploy na cad.besix.cz
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy přes FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./cad-besix-cz/
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/README.md
+            **/docs/**
+            **/sql/**
