@@ -25,7 +25,8 @@ header('Access-Control-Allow-Headers: Content-Type');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
-// ── Session (sdílená s board.besix.cz) ──────────────────────────────────────
+// ── Session ──────────────────────────────────────────────────────────────────
+ini_set('session.gc_maxlifetime', 604800);
 session_set_cookie_params([
     'lifetime' => 604800,
     'path'     => '/',
@@ -34,7 +35,8 @@ session_set_cookie_params([
     'httponly'  => true,
     'samesite'  => 'Lax'
 ]);
-session_start();
+// read_and_close: přečte session a okamžitě uvolní zámek → žádné blokování
+session_start(['read_and_close' => true]);
 
 $action = $_GET['action'] ?? '';
 

@@ -984,15 +984,25 @@ let _gridLines = [];
 
 // ── AUTH ────────────────────────────────────────────────────────────────────
 async function bootAuth() {
+  // 1. Rychlý ping — ověř že PHP backend vůbec odpovídá
+  try {
+    const pingCtrl = new AbortController();
+    setTimeout(() => pingCtrl.abort(), 5000);
+    await fetch('/api/ping.php', { signal: pingCtrl.signal });
+  } catch {
+    showAuthGate('PHP server nedostupný. Zkontrolujte hosting.');
+    return;
+  }
+
+  // 2. Auth check
   let res, data;
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
+    setTimeout(() => ctrl.abort(), 8000);
     res = await fetch('/api/auth.php?action=me', { credentials: 'include', signal: ctrl.signal });
-    clearTimeout(timer);
     data = await res.json();
   } catch {
-    showAuthGate('Server nedostupný nebo není PHP backend.');
+    showAuthGate('Chyba ověření — zkuste se přihlásit znovu.');
     return;
   }
   if (!res.ok || !data?.success || !data?.user) {
