@@ -1839,13 +1839,125 @@ async function handleImport(e) {
     toast('Importuji DXF…');
     const text = await file.text();
     parseDXF(text);
+    document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
   } else if (ext === 'pdf') {
-    toast('PDF import — bude přidán jako podkladová vrstva');
-    // TODO: pdf.js integration
+    await importPDF(file);
   } else if (ext === 'dwg') {
-    toast('DWG import vyžaduje konverzi na DXF');
+    try {
+      const text = await file.text();
+      if (text.includes('ENTITIES') || text.trimStart().startsWith('  0')) {
+        toast('DWG rozpoznán jako DXF — importuji…');
+        parseDXF(text);
+        document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+      } else {
+        toast('Binární DWG — otevřete ve FreeCAD a exportujte jako DXF');
+      }
+    } catch { toast('DWG: exportujte jako DXF ve FreeCAD nebo AutoCAD'); }
   }
-  document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+}
+
+// ── PDF VECTOR IMPORT ──────────────────────────────────────────────────────
+async function importPDF(file) {
+  toast('Načítám PDF.js…');
+  if (!window.pdfjsLib) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  try {
+    toast('Importuji PDF jako vektory…');
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const layer = getActiveLayer();
+    let count = 0;
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const vp   = page.getViewport({ scale: 1 });
+      const H    = vp.height;
+      const pageOffY = (pageNum - 1) * (H + 30);
+      const { fnArray, argsArray } = await page.getOperatorList();
+
+      let pathStr = '', strokeClr = layer.color, fillClr = 'transparent';
+      let ctm = [1,0,0,1,0,0];
+      const ctmStack = [];
+
+      const tr = (x, y) => ({
+        x:  ctm[0]*x + ctm[2]*y + ctm[4],
+        y:  H - (ctm[1]*x + ctm[3]*y + ctm[5]),
+      });
+
+      const commit = (stroke, fill) => {
+        if (!pathStr.trim()) return;
+        const obj = new fabric.Path(pathStr, {
+          stroke: stroke ? strokeClr : null,
+          fill:   fill   ? fillClr   : 'transparent',
+          strokeWidth: 0.8, selectable: true, evented: true,
+          _cadLayer: layer.id, _cadType: 'imported',
+        });
+        obj.set('top', (obj.top || 0) + pageOffY);
+        canvas.add(obj);
+        count++;
+        pathStr = '';
+      };
+
+      const O = pdfjsLib.OPS;
+      for (let i = 0; i < fnArray.length; i++) {
+        const fn = fnArray[i], a = argsArray[i];
+        switch (fn) {
+          case O.save:    ctmStack.push([...ctm]); break;
+          case O.restore: if (ctmStack.length) ctm = ctmStack.pop(); break;
+          case O.transform:
+            ctm = [ctm[0]*a[0]+ctm[2]*a[1], ctm[1]*a[0]+ctm[3]*a[1],
+                   ctm[0]*a[2]+ctm[2]*a[3], ctm[1]*a[2]+ctm[3]*a[3],
+                   ctm[0]*a[4]+ctm[2]*a[5]+ctm[4], ctm[1]*a[4]+ctm[3]*a[5]+ctm[5]];
+            break;
+          case O.setStrokeRGBColor:
+            strokeClr=`rgb(${Math.round(a[0]*255)},${Math.round(a[1]*255)},${Math.round(a[2]*255)})`; break;
+          case O.setFillRGBColor:
+            fillClr=`rgb(${Math.round(a[0]*255)},${Math.round(a[1]*255)},${Math.round(a[2]*255)})`; break;
+          case O.constructPath: {
+            const ops=a[0], cc=a[1]; let ci=0;
+            for (const op of ops) {
+              if (op===O.moveTo){const p=tr(cc[ci],cc[ci+1]);ci+=2;pathStr+=`M ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;}
+              else if(op===O.lineTo){const p=tr(cc[ci],cc[ci+1]);ci+=2;pathStr+=`L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;}
+              else if(op===O.curveTo){const p1=tr(cc[ci],cc[ci+1]),p2=tr(cc[ci+2],cc[ci+3]),p3=tr(cc[ci+4],cc[ci+5]);ci+=6;pathStr+=`C ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;}
+              else if(op===O.curveTo2){const p2=tr(cc[ci],cc[ci+1]),p3=tr(cc[ci+2],cc[ci+3]);ci+=4;pathStr+=`S ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;}
+              else if(op===O.curveTo3){const p1=tr(cc[ci],cc[ci+1]),p3=tr(cc[ci+2],cc[ci+3]);ci+=4;pathStr+=`Q ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;}
+              else if(op===O.rectangle){const rx=cc[ci],ry=cc[ci+1],rw=cc[ci+2],rh=cc[ci+3];ci+=4;const p1=tr(rx,ry),p2=tr(rx+rw,ry),p3=tr(rx+rw,ry+rh),p4=tr(rx,ry+rh);pathStr+=`M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} L ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} L ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} L ${p4.x.toFixed(1)} ${p4.y.toFixed(1)} Z `;}
+              else if(op===O.closePath){pathStr+='Z ';}
+            }
+            break;
+          }
+          case O.moveTo:   {const p=tr(a[0],a[1]);pathStr+=`M ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;break;}
+          case O.lineTo:   {const p=tr(a[0],a[1]);pathStr+=`L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;break;}
+          case O.curveTo:  {const p1=tr(a[0],a[1]),p2=tr(a[2],a[3]),p3=tr(a[4],a[5]);pathStr+=`C ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;break;}
+          case O.rectangle:{const p1=tr(a[0],a[1]),p2=tr(a[0]+a[2],a[1]),p3=tr(a[0]+a[2],a[1]+a[3]),p4=tr(a[0],a[1]+a[3]);pathStr+=`M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} L ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} L ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} L ${p4.x.toFixed(1)} ${p4.y.toFixed(1)} Z `;break;}
+          case O.closePath: pathStr+='Z '; break;
+          case O.stroke:         commit(true,false);  break;
+          case O.closeStroke:    pathStr+='Z '; commit(true,false);  break;
+          case O.fill:
+          case O.eoFill:         commit(false,true);  break;
+          case O.fillStroke:
+          case O.eoFillStroke:   commit(true,true);   break;
+          case O.closeFillStroke:
+          case O.closeEOFillStroke: pathStr+='Z '; commit(true,true); break;
+          case O.endPath: pathStr=''; break;
+        }
+      }
+    }
+    canvas.renderAll();
+    saveUndoState();
+    document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+    toast(`PDF importováno: ${count} vektorových objektů`);
+  } catch (err) {
+    console.error('PDF import:', err);
+    toast('Chyba PDF importu: ' + err.message);
+  }
 }
 
 // Basic DXF parser (lines, circles, arcs, text)
