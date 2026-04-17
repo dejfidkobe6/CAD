@@ -26,11 +26,6 @@ jobs:
             sed -i "s|\$DB_PASS = '.*';|\$DB_PASS = '${{ secrets.DB_PASS }}';|" $file
           done
 
-      - name: Injektovat Google OAuth credentials
-        run: |
-          sed -i "s|GOOGLE_CLIENT_ID_PLACEHOLDER|${{ secrets.GOOGLE_CLIENT_ID }}|" cad-besix-cz/login.php
-          sed -i "s|GOOGLE_CLIENT_SECRET_PLACEHOLDER|${{ secrets.GOOGLE_CLIENT_SECRET }}|" cad-besix-cz/login.php
-
       - name: Deploy přes FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
