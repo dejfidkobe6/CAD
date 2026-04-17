@@ -148,8 +148,40 @@ body {
   font-size: 10px; font-weight: 700; color: #fff;
   cursor: pointer;
   transition: opacity 0.15s;
+  position: relative;
 }
 .top-user:hover { opacity: 0.8; }
+.user-dropdown {
+  display: none;
+  position: absolute;
+  top: 32px; right: 0;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  z-index: 9999;
+  padding: 6px 0;
+}
+.user-dropdown.open { display: block; }
+.user-dropdown-name {
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--text2);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-dropdown-item {
+  padding: 8px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+}
+.user-dropdown-item:hover { background: var(--surface); color: var(--accent); }
 #syncDot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--green);
@@ -575,7 +607,12 @@ body {
 
     <div class="top-right">
       <div id="syncDot" title="Synchronizováno"></div>
-      <div class="top-user" id="userAvatar" style="background:#4A5340" onclick="logout()" title="Odhlásit">?</div>
+      <div class="top-user" id="userAvatar" style="background:#4A5340" onclick="toggleUserMenu(event)" title="Uživatel">?
+        <div class="user-dropdown" id="userDropdown">
+          <div class="user-dropdown-name" id="userDropdownName">—</div>
+          <div class="user-dropdown-item" onclick="logout()">Odhlásit se</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -965,15 +1002,25 @@ function applyUser() {
   if (!_apiUser) return;
   const displayName = _apiUser.name || _apiUser.email || 'User';
   const initials = displayName.substring(0, 2).toUpperCase();
-  av.textContent = initials;
+  // Preserve dropdown, only update the text node
+  av.childNodes[0].textContent = initials;
   av.style.background = _apiUser.avatar_color || '#4A5340';
-  av.title = displayName + ' — klikni pro odhlášení';
+  document.getElementById('userDropdownName').textContent = displayName;
   CAD.titleBlock.author = _apiUser.name || _apiUser.email || '';
   document.getElementById('tb_author').value = _apiUser.name || _apiUser.email || '';
 }
 
+function toggleUserMenu(e) {
+  e.stopPropagation();
+  document.getElementById('userDropdown').classList.toggle('open');
+}
+
+document.addEventListener('click', () => {
+  document.getElementById('userDropdown')?.classList.remove('open');
+});
+
 async function logout() {
-  if (!confirm('Odhlásit se?')) return;
+  document.getElementById('userDropdown').classList.remove('open');
   try { await fetch('/api/auth.php?action=logout', { method: 'POST', credentials: 'include' }); } catch {}
   window.location.href = '/login.php';
 }
