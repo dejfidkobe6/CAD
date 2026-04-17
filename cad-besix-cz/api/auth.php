@@ -40,8 +40,23 @@ $action = $_GET['action'] ?? '';
 
 // ── Logout ───────────────────────────────────────────────────────────────────
 if ($action === 'logout') {
+    $userId = $_SESSION['user_id'] ?? null;
     $_SESSION = [];
     session_destroy();
+    // Smaž remember_token cookie + záznam v DB
+    if (isset($_COOKIE['besix_remember'])) {
+        if ($userId) {
+            try {
+                $pdo = new PDO(
+                    "mysql:host=$DB_HOST;dbname=$DB_NAME;charset=utf8mb4",
+                    $DB_USER, $DB_PASS,
+                    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+                );
+                $pdo->prepare('DELETE FROM remember_tokens WHERE user_id = ?')->execute([$userId]);
+            } catch (PDOException $e) {}
+        }
+        setcookie('besix_remember', '', ['expires' => time() - 3600, 'path' => '/', 'domain' => '.besix.cz', 'secure' => true, 'httponly' => true]);
+    }
     echo json_encode(['success' => true]);
     exit;
 }
