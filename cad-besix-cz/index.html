@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>BeSix CAD</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
@@ -806,6 +809,14 @@ body {
 <!-- TOAST -->
 <div id="toast"></div>
 
+<!-- AUTH GATE — skryje se po úspěšném přihlášení -->
+<div id="authGate" style="position:fixed;inset:0;z-index:99999;background:#0d1117;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+  <img src="/besix_logo_highres_transparent.png" style="height:48px;filter:brightness(1.1)">
+  <div style="color:#fff;font-family:Montserrat,sans-serif;font-size:22px;font-weight:700;letter-spacing:4px;">CAD</div>
+  <div id="authGateMsg" style="color:#8a9a8a;font-family:Montserrat,sans-serif;font-size:13px;margin-top:8px;">Ověřování…</div>
+  <a id="authGateBtn" href="/login.php" style="display:none;margin-top:8px;background:#c8a84b;color:#1a1000;font-family:Montserrat,sans-serif;font-weight:700;font-size:13px;padding:10px 24px;border-radius:6px;text-decoration:none;letter-spacing:1px;">PŘIHLÁSIT SE</a>
+</div>
+
 <!-- Hidden file inputs -->
 <input type="file" id="importFileInput" accept=".dxf,.pdf,.dwg" style="display:none" onchange="handleImport(event)">
 
@@ -978,16 +989,24 @@ async function bootAuth() {
     res = await fetch('/api/auth.php?action=me', { credentials: 'include' });
     data = await res.json();
   } catch {
-    window.location.href = '/login.php';
+    showAuthGate('Nepodařilo se připojit k serveru.');
     return;
   }
   if (!res.ok || !data?.success || !data?.user) {
-    window.location.href = '/login.php';
+    showAuthGate('Nejste přihlášeni.');
     return;
   }
   _apiUser = data.user;
   applyUser();
+  document.getElementById('authGate').style.display = 'none';
   initCAD();
+}
+
+function showAuthGate(msg) {
+  const gate = document.getElementById('authGate');
+  document.getElementById('authGateMsg').textContent = msg;
+  document.getElementById('authGateBtn').style.display = 'inline-block';
+  gate.style.display = 'flex';
 }
 
 function applyUser() {
