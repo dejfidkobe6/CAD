@@ -276,12 +276,6 @@ try {
     </label>
     <button type="submit" class="btn-primary">Přihlásit se</button>
   </form>
-
-  <div class="divider">nebo</div>
-
-  <a class="btn-sso" href="https://besix.cz/login.php?redirect=<?= urlencode('https://cad.besix.cz/') ?>">
-    Přihlásit přes besix.cz platformu
-  </a>
 </div>
 </body>
 </html>
