@@ -930,12 +930,13 @@ let _gridLines = [];
 
 // ── AUTH ────────────────────────────────────────────────────────────────────
 async function bootAuth() {
+  const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   let res;
   try {
     res = await fetch('/api/auth.php?action=me', { credentials: 'include' });
   } catch {
-    // No PHP backend (local dev) — start offline
-    startOffline();
+    if (isLocal) { startOffline(); return; }
+    window.location.href = '/login.php';
     return;
   }
   if (!res.ok) {
@@ -943,6 +944,10 @@ async function bootAuth() {
     return;
   }
   const data = await res.json();
+  if (!data.success) {
+    window.location.href = '/login.php';
+    return;
+  }
   _apiUser = data.user;
   applyUser();
   initCAD();
