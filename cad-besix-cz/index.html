@@ -150,6 +150,10 @@ body {
   transition: opacity 0.15s;
   position: relative;
 }
+.top-user::before {
+  content: attr(data-initials);
+  pointer-events: none;
+}
 .top-user:hover { opacity: 0.8; }
 .user-dropdown {
   display: none;
@@ -578,6 +582,8 @@ body {
         <div class="menu-dropdown-item" onclick="openTitleBlockModal()">Nastavení razítka…</div>
         <div class="menu-sep"></div>
         <div class="menu-dropdown-item" onclick="startCalibrate()">Kalibrovat měřítko… <span class="shortcut">K</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-dropdown-item" onclick="logout()" style="color:#e05c5c">Odhlásit se</div>
       </div>
     </div>
 
@@ -607,7 +613,7 @@ body {
 
     <div class="top-right">
       <div id="syncDot" title="Synchronizováno"></div>
-      <div class="top-user" id="userAvatar" style="background:#4A5340" onclick="toggleUserMenu(event)" title="Uživatel">?
+      <div class="top-user" id="userAvatar" data-initials="?" style="background:#4A5340" onclick="toggleUserMenu(event)" title="Uživatel">
         <div class="user-dropdown" id="userDropdown">
           <div class="user-dropdown-name" id="userDropdownName">—</div>
           <div class="user-dropdown-item" onclick="logout()">Odhlásit se</div>
@@ -986,13 +992,13 @@ async function bootAuth() {
 
 function applyUser() {
   const av = document.getElementById('userAvatar');
-  if (!_apiUser) return;
+  if (!av || !_apiUser) return;
   const displayName = _apiUser.name || _apiUser.email || 'User';
   const initials = displayName.substring(0, 2).toUpperCase();
-  // Preserve dropdown, only update the text node
-  av.childNodes[0].textContent = initials;
+  av.setAttribute('data-initials', initials);
   av.style.background = _apiUser.avatar_color || '#4A5340';
-  document.getElementById('userDropdownName').textContent = displayName;
+  const nameEl = document.getElementById('userDropdownName');
+  if (nameEl) nameEl.textContent = displayName;
   CAD.titleBlock.author = _apiUser.name || _apiUser.email || '';
   document.getElementById('tb_author').value = _apiUser.name || _apiUser.email || '';
 }
