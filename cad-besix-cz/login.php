@@ -223,20 +223,23 @@ try {
   }
   .btn-sso {
     width: 100%;
-    background: transparent;
-    color: var(--text2);
+    background: #1e2730;
+    color: var(--text);
     border: 1px solid var(--border);
     border-radius: 6px;
     font-family: inherit;
     font-size: 13px;
-    padding: 10px;
+    font-weight: 600;
+    padding: 11px;
     cursor: pointer;
-    transition: border-color .15s, color .15s;
-    text-decoration: none;
-    display: block;
-    text-align: center;
+    transition: border-color .15s, background .15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
   }
-  .btn-sso:hover { border-color: var(--accent2); color: var(--text); }
+  .btn-sso:hover { border-color: var(--accent); background: #252f3a; }
+  #ssoStatus { font-size: 12px; color: var(--accent); margin-top: 10px; text-align: center; display: none; }
   .error {
     background: rgba(224,92,92,.12);
     border: 1px solid rgba(224,92,92,.3);
@@ -276,6 +279,46 @@ try {
     </label>
     <button type="submit" class="btn-primary">Přihlásit se</button>
   </form>
+
+  <div class="divider">nebo</div>
+
+  <button class="btn-sso" onclick="loginViaBesix()">
+    <img src="/besix_logo_highres_transparent.png" style="height:16px;filter:invert(1)" alt="">
+    Přihlásit přes BeSix platformu
+  </button>
+  <div id="ssoStatus">Čekám na přihlášení na besix.cz…</div>
 </div>
+
+<script>
+function loginViaBesix() {
+  const popup = window.open('https://besix.cz', 'besix_login',
+    'width=480,height=640,left=' + (screen.width/2 - 240) + ',top=' + (screen.height/2 - 320));
+  document.getElementById('ssoStatus').style.display = 'block';
+
+  const poll = setInterval(async () => {
+    if (popup && popup.closed) {
+      clearInterval(poll);
+      // Popup zavřen — zkus auth
+      checkSession();
+      return;
+    }
+    checkSession();
+  }, 2000);
+
+  async function checkSession() {
+    try {
+      const r = await fetch('/api/auth.php?action=me', { credentials: 'include' });
+      if (r.ok) {
+        const d = await r.json();
+        if (d.success) {
+          clearInterval(poll);
+          if (popup && !popup.closed) popup.close();
+          window.location.href = '/';
+        }
+      }
+    } catch {}
+  }
+}
+</script>
 </body>
 </html>
