@@ -967,34 +967,21 @@ let _gridLines = [];
 
 // ── AUTH ────────────────────────────────────────────────────────────────────
 async function bootAuth() {
-  const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  let res;
+  let res, data;
   try {
     res = await fetch('/api/auth.php?action=me', { credentials: 'include' });
+    data = await res.json();
   } catch {
-    if (isLocal) { startOffline(); return; }
     window.location.href = '/login.php';
     return;
   }
-  if (!res.ok) {
-    window.location.href = '/login.php';
-    return;
-  }
-  const data = await res.json();
-  if (!data.success) {
+  if (!res.ok || !data?.success || !data?.user) {
     window.location.href = '/login.php';
     return;
   }
   _apiUser = data.user;
   applyUser();
   initCAD();
-}
-
-function startOffline() {
-  _apiUser = { id: 0, name: 'Offline', email: '', avatar_color: '#4A5340' };
-  applyUser();
-  initCAD();
-  toast('Offline režim — bez serveru');
 }
 
 function applyUser() {
