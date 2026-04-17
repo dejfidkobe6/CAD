@@ -986,10 +986,13 @@ let _gridLines = [];
 async function bootAuth() {
   let res, data;
   try {
-    res = await fetch('/api/auth.php?action=me', { credentials: 'include' });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    res = await fetch('/api/auth.php?action=me', { credentials: 'include', signal: ctrl.signal });
+    clearTimeout(timer);
     data = await res.json();
   } catch {
-    showAuthGate('Nepodařilo se připojit k serveru.');
+    showAuthGate('Server nedostupný nebo není PHP backend.');
     return;
   }
   if (!res.ok || !data?.success || !data?.user) {
