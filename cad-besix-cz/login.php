@@ -282,43 +282,9 @@ try {
 
   <div class="divider">nebo</div>
 
-  <button class="btn-sso" onclick="loginViaBesix()">
+  <a class="btn-sso" href="https://besix.cz/sso-token.php?redirect=<?= urlencode('https://cad.besix.cz/sso-callback.php') ?>">
     <img src="/besix_logo_highres_transparent.png" style="height:16px;filter:invert(1)" alt="">
     Přihlásit přes BeSix platformu
-  </button>
-  <div id="ssoStatus">Čekám na přihlášení na besix.cz…</div>
-</div>
-
-<script>
-function loginViaBesix() {
-  const popup = window.open('https://besix.cz', 'besix_login',
-    'width=480,height=640,left=' + (screen.width/2 - 240) + ',top=' + (screen.height/2 - 320));
-  document.getElementById('ssoStatus').style.display = 'block';
-
-  const poll = setInterval(async () => {
-    if (popup && popup.closed) {
-      clearInterval(poll);
-      // Popup zavřen — zkus auth
-      checkSession();
-      return;
-    }
-    checkSession();
-  }, 2000);
-
-  async function checkSession() {
-    try {
-      const r = await fetch('/api/auth.php?action=me', { credentials: 'include' });
-      if (r.ok) {
-        const d = await r.json();
-        if (d.success) {
-          clearInterval(poll);
-          if (popup && !popup.closed) popup.close();
-          window.location.href = '/';
-        }
-      }
-    } catch {}
-  }
-}
-</script>
+  </a>
 </body>
 </html>
