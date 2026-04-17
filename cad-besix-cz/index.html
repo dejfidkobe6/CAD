@@ -963,19 +963,19 @@ function startOffline() {
 function applyUser() {
   const av = document.getElementById('userAvatar');
   if (!_apiUser) return;
-  const initials = (_apiUser.name || '?').substring(0, 2).toUpperCase();
+  const displayName = _apiUser.name || _apiUser.email || 'User';
+  const initials = displayName.substring(0, 2).toUpperCase();
   av.textContent = initials;
   av.style.background = _apiUser.avatar_color || '#4A5340';
-  av.title = (_apiUser.name || 'Uživatel') + ' — klikni pro odhlášení';
-  CAD.titleBlock.author = _apiUser.name || '';
-  document.getElementById('tb_author').value = _apiUser.name || '';
+  av.title = displayName + ' — klikni pro odhlášení';
+  CAD.titleBlock.author = _apiUser.name || _apiUser.email || '';
+  document.getElementById('tb_author').value = _apiUser.name || _apiUser.email || '';
 }
 
 async function logout() {
   if (!confirm('Odhlásit se?')) return;
   try { await fetch('/api/auth.php?action=logout', { method: 'POST', credentials: 'include' }); } catch {}
-  // Odhlásit i z platformy besix.cz (sdílená session)
-  window.location.href = 'https://besix.cz/logout.php?redirect=' + encodeURIComponent('https://cad.besix.cz/');
+  window.location.href = '/login.php';
 }
 
 // ── INIT CAD ───────────────────────────────────────────────────────────────
