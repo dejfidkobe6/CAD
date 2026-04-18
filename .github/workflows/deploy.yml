@@ -17,12 +17,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Injektovat DB credentials do cad.php
+      - name: Injektovat DB credentials
         run: |
-          sed -i "s|\$DB_HOST = '.*';|\$DB_HOST = '${{ secrets.DB_HOST }}';|" cad-besix-cz/api/cad.php
-          sed -i "s|\$DB_NAME = '.*';|\$DB_NAME = '${{ secrets.DB_NAME }}';|" cad-besix-cz/api/cad.php
-          sed -i "s|\$DB_USER = '.*';|\$DB_USER = '${{ secrets.DB_USER }}';|" cad-besix-cz/api/cad.php
-          sed -i "s|\$DB_PASS = '.*';|\$DB_PASS = '${{ secrets.DB_PASS }}';|" cad-besix-cz/api/cad.php
+          for file in cad-besix-cz/api/cad.php cad-besix-cz/api/auth.php cad-besix-cz/login.php cad-besix-cz/index.php; do
+            sed -i "s|\$DB_HOST = '.*';|\$DB_HOST = '${{ secrets.DB_HOST }}';|" $file
+            sed -i "s|\$DB_NAME = '.*';|\$DB_NAME = '${{ secrets.DB_NAME }}';|" $file
+            sed -i "s|\$DB_USER = '.*';|\$DB_USER = '${{ secrets.DB_USER }}';|" $file
+            sed -i "s|\$DB_PASS = '.*';|\$DB_PASS = '${{ secrets.DB_PASS }}';|" $file
+          done
 
       - name: Deploy přes FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -31,6 +33,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./cad-besix-cz/
+          dangerous-clean-slate: true
           exclude: |
             **/.git*
             **/.git*/**
