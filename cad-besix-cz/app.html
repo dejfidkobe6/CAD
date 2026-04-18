@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>BeSix CAD</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
@@ -40,6 +43,7 @@
   --panel-w: 220px;
   --toolbar-w: 44px;
   --topbar-h: 40px;
+  --tabbar-h: 34px;
   --statusbar-h: 28px;
 
   --layer-nosne: #ff4444;
@@ -67,10 +71,11 @@ body {
 /* ─── LAYOUT ─── */
 #cadApp {
   display: grid;
-  grid-template-rows: var(--topbar-h) 1fr var(--statusbar-h);
+  grid-template-rows: var(--topbar-h) var(--tabbar-h) 1fr var(--statusbar-h);
   grid-template-columns: var(--toolbar-w) 1fr var(--panel-w);
   grid-template-areas:
     "topbar topbar topbar"
+    "tabs   tabs   tabs"
     "toolbar canvas panel"
     "status status status";
   height: 100vh; width: 100vw;
@@ -97,7 +102,7 @@ body {
   margin-right: 2px;
   height: 100%;
 }
-.top-logo svg { width: 18px; height: 18px; }
+.top-logo img { height: 22px; width: auto; filter: brightness(0) invert(1); }
 .top-logo span { font-weight: 400; color: var(--text2); font-size: 11px; margin-left: 2px; }
 
 /* Menu items */
@@ -146,13 +151,98 @@ body {
   font-size: 10px; font-weight: 700; color: #fff;
   cursor: pointer;
   transition: opacity 0.15s;
+  position: relative;
+}
+.top-user::before {
+  content: attr(data-initials);
+  pointer-events: none;
 }
 .top-user:hover { opacity: 0.8; }
+.user-dropdown {
+  display: none;
+  position: absolute;
+  top: 32px; right: 0;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  z-index: 9999;
+  padding: 6px 0;
+}
+.user-dropdown.open { display: block; }
+.user-dropdown-name {
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--text2);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-dropdown-item {
+  padding: 8px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+}
+.user-dropdown-item:hover { background: var(--surface); color: var(--accent); }
 #syncDot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--green);
   flex-shrink: 0;
 }
+
+/* ─── TAB BAR ─── */
+#tabBar {
+  grid-area: tabs;
+  display: flex; align-items: center;
+  background: #0a0e06;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none;
+  z-index: 90; user-select: none;
+}
+#tabBar::-webkit-scrollbar { display: none; }
+#tabsList { display: flex; align-items: stretch; height: 100%; }
+.tab-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 12px 0 14px;
+  font-size: 11px; font-weight: 500;
+  color: var(--text2);
+  border-right: 1px solid var(--border);
+  cursor: pointer; white-space: nowrap;
+  min-width: 100px; max-width: 180px;
+  transition: background 0.12s, color 0.12s;
+  position: relative;
+}
+.tab-item:hover { background: var(--surface2); color: var(--text); }
+.tab-item.active {
+  background: var(--toolbar-bg);
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+}
+.tab-item .tab-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis;
+}
+.tab-item .tab-close {
+  opacity: 0; font-size: 12px; line-height: 1;
+  color: var(--text2); padding: 2px 2px;
+  border-radius: 3px;
+  transition: opacity 0.1s, background 0.1s;
+}
+.tab-item:hover .tab-close { opacity: 1; }
+.tab-item .tab-close:hover { background: rgba(255,59,48,0.2); color: var(--danger); }
+.tab-new-btn {
+  padding: 0 14px; font-size: 18px; color: var(--text2);
+  background: none; border: none; cursor: pointer;
+  line-height: var(--tabbar-h); height: 100%;
+  transition: color 0.12s, background 0.12s;
+  flex-shrink: 0;
+}
+.tab-new-btn:hover { color: var(--text); background: var(--surface2); }
 
 /* ─── LEFT TOOLBAR ─── */
 #toolbar {
@@ -325,6 +415,16 @@ body {
 }
 .status-toggle:hover { background: var(--surface2); }
 .status-toggle.on { color: var(--accent); background: rgba(200,145,42,0.12); }
+.status-cmd {
+  display: flex; align-items: center;
+  padding: 0 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: var(--accent);
+  min-width: 140px;
+  border-left: 1px solid var(--border);
+}
+.status-cmd-label { color: var(--text2); margin-right: 6px; font-size: 10px; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 .status-spacer { flex: 1; }
 
 /* ─── MODAL ─── */
@@ -469,8 +569,8 @@ body {
   <!-- TOP BAR -->
   <div id="topBar">
     <div class="top-logo">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20V8l10-6 10 6v12"/><path d="M6 20v-8l6-4 6 4v8"/><path d="M10 20v-4h4v4"/></svg>
-      BeSix <span>CAD</span>
+      <img src="/besix_logo_highres_transparent.png" alt="BeSix">
+      <span>CAD</span>
     </div>
 
     <div class="menu-item" onclick="toggleMenu(this,'menuFile')">Soubor
@@ -483,6 +583,10 @@ body {
         <div class="menu-dropdown-item" onclick="exportPNG()">Export PNG</div>
         <div class="menu-sep"></div>
         <div class="menu-dropdown-item" onclick="openTitleBlockModal()">Nastavení razítka…</div>
+        <div class="menu-sep"></div>
+        <div class="menu-dropdown-item" onclick="startCalibrate()">Kalibrovat měřítko… <span class="shortcut">K</span></div>
+        <div class="menu-sep"></div>
+        <div class="menu-dropdown-item" onclick="logout()" style="color:#e05c5c">Odhlásit se</div>
       </div>
     </div>
 
@@ -512,8 +616,19 @@ body {
 
     <div class="top-right">
       <div id="syncDot" title="Synchronizováno"></div>
-      <div class="top-user" id="userAvatar" style="background:#4A5340" onclick="logout()" title="Odhlásit">?</div>
+      <div class="top-user" id="userAvatar" data-initials="?" style="background:#4A5340" onclick="toggleUserMenu(event)" title="Uživatel">
+        <div class="user-dropdown" id="userDropdown">
+          <div class="user-dropdown-name" id="userDropdownName">—</div>
+          <div class="user-dropdown-item" onclick="logout()">Odhlásit se</div>
+        </div>
+      </div>
     </div>
+  </div>
+
+  <!-- TAB BAR -->
+  <div id="tabBar">
+    <div id="tabsList"></div>
+    <button class="tab-new-btn" onclick="addDrawingTab()" title="Nový výkres (Ctrl+N)">+</button>
   </div>
 
   <!-- LEFT TOOLBAR -->
@@ -637,6 +752,9 @@ body {
   <div id="statusBar">
     <div class="status-item">X: <span id="cursorX">0</span></div>
     <div class="status-item">Y: <span id="cursorY">0</span></div>
+    <div class="status-cmd" id="cmdLine" style="display:none">
+      <span class="status-cmd-label">XY›</span><span id="cmdBuffer"></span><span style="animation:blink 1s step-end infinite">▌</span>
+    </div>
     <div class="status-item" style="margin-left:8px;">
       <span class="status-toggle on" id="snapToggle" onclick="toggleSnap()">SNAP</span>
     </div>
@@ -691,6 +809,14 @@ body {
 <!-- TOAST -->
 <div id="toast"></div>
 
+<!-- AUTH GATE — skryje se po úspěšném přihlášení -->
+<div id="authGate" style="position:fixed;inset:0;z-index:99999;background:#0d1117;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+  <img src="/besix_logo_highres_transparent.png" style="height:48px;filter:brightness(1.1)">
+  <div style="color:#fff;font-family:Montserrat,sans-serif;font-size:22px;font-weight:700;letter-spacing:4px;">CAD</div>
+  <div id="authGateMsg" style="color:#8a9a8a;font-family:Montserrat,sans-serif;font-size:13px;margin-top:8px;">Ověřování…</div>
+  <a id="authGateBtn" href="/login.php" style="display:none;margin-top:8px;background:#c8a84b;color:#1a1000;font-family:Montserrat,sans-serif;font-weight:700;font-size:13px;padding:10px 24px;border-radius:6px;text-decoration:none;letter-spacing:1px;">PŘIHLÁSIT SE</a>
+</div>
+
 <!-- Hidden file inputs -->
 <input type="file" id="importFileInput" accept=".dxf,.pdf,.dwg" style="display:none" onchange="handleImport(event)">
 
@@ -699,6 +825,124 @@ body {
    BeSix CAD — JavaScript
    MVP: Canvas, drawing tools, layers, export, auth
    ═══════════════════════════════════════════════════════════════════════════ */
+
+// ── Drawing Tabs ────────────────────────────────────────────────────────────
+let _drawingTabs = [];
+let _activeTabId = null;
+let _tabCounter = 0;
+
+function createTabData(name = 'Nový výkres') {
+  _tabCounter++;
+  return {
+    id: _tabCounter,
+    name,
+    canvasJSON: null,
+    scale: '1:100',
+    paperSize: 'A3',
+    gridSize: 100,
+    layers: JSON.parse(JSON.stringify(CAD.layers)),
+    titleBlock: { projectName:'', drawingNumber:'', drawingTitle:'',
+      stage:'DPS', author: _apiUser?.name || '', checker:'', investor:'', date:'', logoData: null },
+    undoStack: [],
+    redoStack: [],
+  };
+}
+
+function renderTabs() {
+  const list = document.getElementById('tabsList');
+  if (!list) return;
+  list.innerHTML = _drawingTabs.map(t => `
+    <div class="tab-item ${t.id === _activeTabId ? 'active' : ''}" onclick="switchDrawingTab(${t.id})">
+      <span class="tab-name" title="${t.name}">${t.name}</span>
+      <span class="tab-close" onclick="event.stopPropagation();closeDrawingTab(${t.id})" title="Zavřít">×</span>
+    </div>
+  `).join('');
+}
+
+function addDrawingTab(name = 'Nový výkres') {
+  // Save current tab first
+  if (_activeTabId !== null) saveCurrentTabState();
+  const tab = createTabData(name);
+  _drawingTabs.push(tab);
+  switchDrawingTab(tab.id);
+}
+
+function switchDrawingTab(id) {
+  if (id === _activeTabId) return;
+  if (_activeTabId !== null) saveCurrentTabState();
+  _activeTabId = id;
+  const tab = _drawingTabs.find(t => t.id === id);
+  if (!tab) return;
+
+  // Restore CAD settings
+  CAD.scale = tab.scale;
+  CAD.paperSize = tab.paperSize;
+  CAD.gridSize = tab.gridSize;
+  CAD.layers = JSON.parse(JSON.stringify(tab.layers));
+  CAD.titleBlock = JSON.parse(JSON.stringify(tab.titleBlock));
+  CAD.undoStack = tab.undoStack;
+  CAD.redoStack = tab.redoStack;
+
+  // Update UI
+  const scaleEl = document.getElementById('scaleSelect');
+  if (scaleEl) scaleEl.value = CAD.scale;
+  const gridEl = document.getElementById('gridSizeInput');
+  if (gridEl) gridEl.value = CAD.gridSize;
+  const paperEl = document.getElementById('paperSelect');
+  if (paperEl) paperEl.value = CAD.paperSize;
+  document.getElementById('diScale').textContent = CAD.scale;
+  document.getElementById('diName').textContent = tab.name;
+  renderLayers();
+  renderTabs();
+
+  // Load canvas
+  if (tab.canvasJSON) {
+    canvas.loadFromJSON(tab.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
+  } else {
+    canvas.clear();
+    canvas.backgroundColor = '#1a1a2e';
+    drawGrid();
+    canvas.renderAll();
+  }
+}
+
+function saveCurrentTabState() {
+  const tab = _drawingTabs.find(t => t.id === _activeTabId);
+  if (!tab || !canvas) return;
+  tab.canvasJSON = canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']);
+  tab.scale = CAD.scale;
+  tab.paperSize = CAD.paperSize;
+  tab.gridSize = CAD.gridSize;
+  tab.layers = JSON.parse(JSON.stringify(CAD.layers));
+  tab.titleBlock = JSON.parse(JSON.stringify(CAD.titleBlock));
+  tab.undoStack = [...CAD.undoStack];
+  tab.redoStack = [...CAD.redoStack];
+  // Update tab name from titleBlock
+  const name = CAD.titleBlock.drawingTitle || CAD.titleBlock.drawingNumber || tab.name;
+  tab.name = name;
+}
+
+function closeDrawingTab(id) {
+  if (_drawingTabs.length <= 1) {
+    // Last tab — just clear it
+    canvas.clear(); canvas.backgroundColor = '#1a1a2e'; drawGrid(); canvas.renderAll();
+    const tab = _drawingTabs[0];
+    tab.canvasJSON = null; tab.name = 'Nový výkres';
+    CAD.undoStack = []; CAD.redoStack = [];
+    renderTabs();
+    return;
+  }
+  const idx = _drawingTabs.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  _drawingTabs.splice(idx, 1);
+  if (_activeTabId === id) {
+    _activeTabId = null;
+    const next = _drawingTabs[Math.min(idx, _drawingTabs.length - 1)];
+    switchDrawingTab(next.id);
+  } else {
+    renderTabs();
+  }
+}
 
 // ── State ──────────────────────────────────────────────────────────────────
 let _apiUser = null;
@@ -740,43 +984,68 @@ let _gridLines = [];
 
 // ── AUTH ────────────────────────────────────────────────────────────────────
 async function bootAuth() {
-  let res;
+  // 1. Rychlý ping — ověř že PHP backend vůbec odpovídá
   try {
-    res = await fetch('/api/auth.php?action=me', { credentials: 'include' });
+    const pingCtrl = new AbortController();
+    setTimeout(() => pingCtrl.abort(), 5000);
+    await fetch('/api/ping.php', { signal: pingCtrl.signal });
   } catch {
-    // No PHP backend (local dev) — start offline
-    startOffline();
+    showAuthGate('PHP server nedostupný. Zkontrolujte hosting.');
     return;
   }
-  if (!res.ok) {
-    window.location.href = '/login.php?redirect=cad';
+
+  // 2. Auth check
+  let res, data;
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 8000);
+    res = await fetch('/api/auth.php?action=me', { credentials: 'include', signal: ctrl.signal });
+    data = await res.json();
+  } catch {
+    showAuthGate('Chyba ověření — zkuste se přihlásit znovu.');
     return;
   }
-  const data = await res.json();
+  if (!res.ok || !data?.success || !data?.user) {
+    showAuthGate('Nejste přihlášeni.');
+    return;
+  }
   _apiUser = data.user;
   applyUser();
+  document.getElementById('authGate').style.display = 'none';
   initCAD();
 }
 
-function startOffline() {
-  _apiUser = { id: 0, name: 'Offline', email: '', avatar_color: '#4A5340' };
-  applyUser();
-  initCAD();
-  toast('Offline režim — bez serveru');
+function showAuthGate(msg) {
+  const gate = document.getElementById('authGate');
+  document.getElementById('authGateMsg').textContent = msg;
+  document.getElementById('authGateBtn').style.display = 'inline-block';
+  gate.style.display = 'flex';
 }
 
 function applyUser() {
   const av = document.getElementById('userAvatar');
-  if (!_apiUser) return;
-  av.textContent = _apiUser.name.substring(0, 2).toUpperCase();
+  if (!av || !_apiUser) return;
+  const displayName = _apiUser.name || _apiUser.email || 'User';
+  const initials = displayName.substring(0, 2).toUpperCase();
+  av.setAttribute('data-initials', initials);
   av.style.background = _apiUser.avatar_color || '#4A5340';
-  av.title = _apiUser.name + ' — klikni pro odhlášení';
-  CAD.titleBlock.author = _apiUser.name;
-  document.getElementById('tb_author').value = _apiUser.name;
+  const nameEl = document.getElementById('userDropdownName');
+  if (nameEl) nameEl.textContent = displayName;
+  CAD.titleBlock.author = _apiUser.name || _apiUser.email || '';
+  document.getElementById('tb_author').value = _apiUser.name || _apiUser.email || '';
 }
 
+function toggleUserMenu(e) {
+  e.stopPropagation();
+  document.getElementById('userDropdown').classList.toggle('open');
+}
+
+document.addEventListener('click', () => {
+  document.getElementById('userDropdown')?.classList.remove('open');
+});
+
 async function logout() {
-  if (!confirm('Odhlásit se?')) return;
+  document.getElementById('userDropdown').classList.remove('open');
   try { await fetch('/api/auth.php?action=logout', { method: 'POST', credentials: 'include' }); } catch {}
   window.location.href = '/login.php';
 }
@@ -811,6 +1080,21 @@ function initCAD() {
   setupCanvasEvents();
   setupKeyboard();
   loadFromIndexedDB();
+
+  // Initialize first drawing tab
+  if (_drawingTabs.length === 0) {
+    _tabCounter++;
+    const firstTab = {
+      id: _tabCounter, name: 'Nový výkres',
+      canvasJSON: null, scale: '1:100', paperSize: 'A3', gridSize: 100,
+      layers: JSON.parse(JSON.stringify(CAD.layers)),
+      titleBlock: JSON.parse(JSON.stringify(CAD.titleBlock)),
+      undoStack: [], redoStack: [],
+    };
+    _drawingTabs.push(firstTab);
+    _activeTabId = firstTab.id;
+    renderTabs();
+  }
 
   // Set initial date
   document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
@@ -887,15 +1171,21 @@ function setupCanvasEvents() {
     opt.e.stopPropagation();
   });
 
-  // Pan (middle button or Alt+drag)
+  // Zabránit browser auto-scroll při středním tlačítku
+  canvas.upperCanvasEl.addEventListener('mousedown', (e) => {
+    if (e.button === 1) e.preventDefault();
+  });
+
+  // Pan (middle button nebo Alt+drag) — jako AutoCAD
   let _isPanning = false;
   let _panLast = null;
   canvas.on('mouse:down', (opt) => {
     if (opt.e.button === 1 || (opt.e.altKey && opt.e.button === 0)) {
+      opt.e.preventDefault();
       _isPanning = true;
       _panLast = { x: opt.e.clientX, y: opt.e.clientY };
       canvas.selection = false;
-      canvas.setCursor('grab');
+      canvas.setCursor('grabbing');
       return;
     }
     handleToolMouseDown(opt);
@@ -910,6 +1200,13 @@ function setupCanvasEvents() {
       canvas.requestRenderAll();
       _panLast = { x: opt.e.clientX, y: opt.e.clientY };
       return;
+    }
+    // Update snap marker on hover even when not drawing
+    if (!_isPanning && CAD.snapEnabled) {
+      const raw = canvas.getPointer(opt.e);
+      const snap = findObjSnap(raw.x, raw.y);
+      if (snap) showSnapMarker(snap.x, snap.y, snap.snapType);
+      else hideSnapMarker();
     }
     handleToolMouseMove(opt);
   });
@@ -951,7 +1248,7 @@ function setTool(tool) {
     select: 'Výběr', line: 'Čára', rect: 'Obdélník', circle: 'Kružnice',
     polyline: 'Polyline', text: 'Text', dimension: 'Kóta', wall: 'Stěna',
     move: 'Přesun', copy: 'Kopie', rotate: 'Rotace', mirror: 'Zrcadlo',
-    trim: 'Trim', offset: 'Offset'
+    trim: 'Trim', offset: 'Offset', calibrate: 'Kalibrace měřítka'
   };
   document.getElementById('statusTool').textContent = names[tool] || tool;
   wrap.style.cursor = tool === 'select' ? 'default' : 'crosshair';
@@ -961,13 +1258,149 @@ function getActiveLayer() {
   return CAD.layers.find(l => l.active) || CAD.layers[0];
 }
 
+function getObjSnapPoints(obj) {
+  const pts = [];
+  if (obj.excludeFromExport || !obj.visible) return pts;
+  switch (obj.type) {
+    case 'line':
+      pts.push({ x: obj.x1, y: obj.y1, snapType: 'endpoint' });
+      pts.push({ x: obj.x2, y: obj.y2, snapType: 'endpoint' });
+      pts.push({ x: (obj.x1+obj.x2)/2, y: (obj.y1+obj.y2)/2, snapType: 'midpoint' });
+      break;
+    case 'rect': {
+      const l = obj.left, t = obj.top;
+      const w = obj.width * (obj.scaleX||1), h = obj.height * (obj.scaleY||1);
+      pts.push({ x:l,     y:t,     snapType:'endpoint' });
+      pts.push({ x:l+w,   y:t,     snapType:'endpoint' });
+      pts.push({ x:l+w,   y:t+h,   snapType:'endpoint' });
+      pts.push({ x:l,     y:t+h,   snapType:'endpoint' });
+      pts.push({ x:l+w/2, y:t,     snapType:'midpoint' });
+      pts.push({ x:l+w,   y:t+h/2, snapType:'midpoint' });
+      pts.push({ x:l+w/2, y:t+h,   snapType:'midpoint' });
+      pts.push({ x:l,     y:t+h/2, snapType:'midpoint' });
+      pts.push({ x:l+w/2, y:t+h/2, snapType:'center' });
+      break;
+    }
+    case 'circle': {
+      const cx = obj.left, cy = obj.top;
+      const r = obj.radius * (obj.scaleX||1);
+      pts.push({ x:cx,   y:cy,   snapType:'center' });
+      pts.push({ x:cx+r, y:cy,   snapType:'quadrant' });
+      pts.push({ x:cx-r, y:cy,   snapType:'quadrant' });
+      pts.push({ x:cx,   y:cy+r, snapType:'quadrant' });
+      pts.push({ x:cx,   y:cy-r, snapType:'quadrant' });
+      break;
+    }
+    case 'polyline': {
+      const m = obj.calcTransformMatrix();
+      (obj.points||[]).forEach((p, i, arr) => {
+        const ap = fabric.util.transformPoint(p, m);
+        pts.push({ x: ap.x, y: ap.y, snapType: 'endpoint' });
+        if (i < arr.length - 1) {
+          const np = fabric.util.transformPoint(arr[i+1], m);
+          pts.push({ x:(ap.x+np.x)/2, y:(ap.y+np.y)/2, snapType:'midpoint' });
+        }
+      });
+      break;
+    }
+    case 'path': {
+      // Snap body z path příkazů (M, L, C) přes transform matici
+      const m = obj.calcTransformMatrix();
+      const snap = [];
+      (obj.path || []).forEach(cmd => {
+        const t = cmd[0];
+        if (t === 'M' || t === 'L') {
+          snap.push({ x: cmd[1], y: cmd[2] });
+        } else if (t === 'C') {
+          snap.push({ x: cmd[5], y: cmd[6] }); // endpoint křivky
+        } else if (t === 'Q') {
+          snap.push({ x: cmd[3], y: cmd[4] });
+        }
+      });
+      // Omez počet bodů (velké PDF mohou mít tisíce)
+      const step = Math.max(1, Math.floor(snap.length / 40));
+      snap.filter((_, i) => i % step === 0).forEach(p => {
+        const ap = fabric.util.transformPoint(p, m);
+        pts.push({ x: ap.x, y: ap.y, snapType: 'endpoint' });
+      });
+      // Vždy přidej rohy bounding boxu
+      const b = obj.getBoundingRect(true);
+      pts.push({ x:b.left,       y:b.top,        snapType:'endpoint' });
+      pts.push({ x:b.left+b.width, y:b.top,      snapType:'endpoint' });
+      pts.push({ x:b.left+b.width, y:b.top+b.height, snapType:'endpoint' });
+      pts.push({ x:b.left,       y:b.top+b.height, snapType:'endpoint' });
+      pts.push({ x:b.left+b.width/2, y:b.top+b.height/2, snapType:'center' });
+      break;
+    }
+    case 'group':
+    case 'activeSelection': {
+      const b = obj.getBoundingRect(true);
+      pts.push({ x:b.left,             y:b.top,              snapType:'endpoint' });
+      pts.push({ x:b.left+b.width,     y:b.top,              snapType:'endpoint' });
+      pts.push({ x:b.left+b.width,     y:b.top+b.height,     snapType:'endpoint' });
+      pts.push({ x:b.left,             y:b.top+b.height,     snapType:'endpoint' });
+      pts.push({ x:b.left+b.width/2,   y:b.top,              snapType:'midpoint' });
+      pts.push({ x:b.left+b.width,     y:b.top+b.height/2,   snapType:'midpoint' });
+      pts.push({ x:b.left+b.width/2,   y:b.top+b.height,     snapType:'midpoint' });
+      pts.push({ x:b.left,             y:b.top+b.height/2,   snapType:'midpoint' });
+      pts.push({ x:b.left+b.width/2,   y:b.top+b.height/2,   snapType:'center' });
+      break;
+    }
+  return pts;
+}
+
+function findObjSnap(rawX, rawY) {
+  const SNAP_R = 16;
+  let best = null, bestD = SNAP_R;
+  canvas.getObjects().forEach(obj => {
+    getObjSnapPoints(obj).forEach(pt => {
+      const d = Math.hypot(pt.x - rawX, pt.y - rawY);
+      if (d < bestD) { bestD = d; best = pt; }
+    });
+  });
+  return best;
+}
+
+function showSnapMarker(canvasX, canvasY, snapType) {
+  const vpt = canvas.viewportTransform;
+  const sx = canvasX * vpt[0] + vpt[4];
+  const sy = canvasY * vpt[3] + vpt[5];
+  const dot = document.getElementById('snapDot');
+  dot.style.left = sx + 'px';
+  dot.style.top  = sy + 'px';
+  dot.style.display = 'block';
+  // Different colors per snap type
+  const colors = { endpoint:'#00ff88', midpoint:'#ffaa00', center:'#00aaff', quadrant:'#ff44ff' };
+  dot.style.borderColor = colors[snapType] || '#00ff88';
+  dot.style.borderRadius = snapType === 'center' ? '2px' : '50%';
+}
+
+function hideSnapMarker() {
+  document.getElementById('snapDot').style.display = 'none';
+}
+
 function getPointer(opt) {
-  const p = canvas.getPointer(opt.e);
-  if (CAD.snapEnabled && CAD.gridSize > 0) {
-    const step = CAD.gridSize * 0.5;
-    p.x = Math.round(p.x / step) * step;
-    p.y = Math.round(p.y / step) * step;
+  if (opt.e && opt.e._point) return opt.e._point;
+  const raw = canvas.getPointer(opt.e);
+  let p = { x: raw.x, y: raw.y };
+
+  if (CAD.snapEnabled) {
+    const snap = findObjSnap(raw.x, raw.y);
+    if (snap) {
+      p = { x: snap.x, y: snap.y };
+      showSnapMarker(snap.x, snap.y, snap.snapType);
+    } else {
+      const step = CAD.gridSize * 0.5;
+      if (step >= 4) {
+        p.x = Math.round(raw.x / step) * step;
+        p.y = Math.round(raw.y / step) * step;
+      }
+      hideSnapMarker();
+    }
+  } else {
+    hideSnapMarker();
   }
+
   if (CAD.orthoEnabled && _drawStart) {
     const dx = Math.abs(p.x - _drawStart.x);
     const dy = Math.abs(p.y - _drawStart.y);
@@ -981,6 +1414,8 @@ function handleToolMouseDown(opt) {
   if (opt.e.button !== 0) return;
   const p = getPointer(opt);
   const layer = getActiveLayer();
+
+  if (_activeTool === 'calibrate') { handleCalibrateClick(p); return; }
 
   switch (_activeTool) {
     case 'line':
@@ -1211,6 +1646,36 @@ function setupKeyboard() {
     // Skip if typing in input
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
+    // Coordinate input mode
+    if (_cmdActive) {
+      if (e.key === 'Escape') {
+        _cmdActive = false; _cmdBuffer = '';
+        updateCmdDisplay(); return;
+      }
+      if (e.key === 'Enter') {
+        applyCmdCoords();
+        _cmdActive = false; _cmdBuffer = '';
+        updateCmdDisplay(); return;
+      }
+      if (e.key === 'Backspace') {
+        _cmdBuffer = _cmdBuffer.slice(0, -1);
+        if (!_cmdBuffer) _cmdActive = false;
+        updateCmdDisplay(); return;
+      }
+      if (/^[\d\.\,\-]$/.test(e.key)) {
+        _cmdBuffer += e.key;
+        updateCmdDisplay(); return;
+      }
+      return;
+    }
+    // Start coordinate input when user types a digit (not in input field, tool active)
+    if (/^[\d\-]$/.test(e.key) && !e.ctrlKey && !e.metaKey && _activeTool !== 'select') {
+      _cmdActive = true;
+      _cmdBuffer = e.key;
+      updateCmdDisplay();
+      e.preventDefault(); return;
+    }
+
     const key = e.key.toLowerCase();
     const ctrl = e.ctrlKey || e.metaKey;
 
@@ -1234,6 +1699,7 @@ function setupKeyboard() {
     else if (key === 'w' && !ctrl) { setTool('wall'); }
     else if (key === 'm' && !ctrl) { setTool('move'); }
     else if (key === 'o' && !ctrl) { setTool('offset'); }
+    else if (key === 'k' && !ctrl) { startCalibrate(); }
     else if (key === 'f7') { e.preventDefault(); toggleGrid(); }
     else if (key === 'f8') { e.preventDefault(); toggleOrtho(); }
     else if (key === 'f3') { e.preventDefault(); toggleSnap(); }
@@ -1241,6 +1707,75 @@ function setupKeyboard() {
     else if (key === '+' || key === '=') { zoomIn(); }
     else if (key === '-') { zoomOut(); }
   });
+}
+
+// ── KALIBRACE MĚŘÍTKA ─────────────────────────────────────────────────────
+let _calibState = null; // null | { p1, targetObj }
+
+function startCalibrate() {
+  const active = canvas.getActiveObject();
+  if (!active) {
+    toast('Nejdřív vyberte importovaný výkres');
+    return;
+  }
+  _calibState = { p1: null, targetObj: active };
+  setTool('calibrate');
+  toast('KALIBRACE: klikněte na první bod referenční kóty');
+}
+
+function handleCalibrateClick(p) {
+  if (!_calibState) return;
+  if (!_calibState.p1) {
+    _calibState.p1 = p;
+    // Nakresli dočasný bod
+    const dot = new fabric.Circle({ left: p.x, top: p.y, radius: 4,
+      fill: '#c9922a', originX: 'center', originY: 'center',
+      selectable: false, evented: false, excludeFromExport: true, _calibDot: true });
+    canvas.add(dot);
+    canvas.renderAll();
+    toast('KALIBRACE: klikněte na druhý bod referenční kóty');
+  } else {
+    const p1 = _calibState.p1;
+    const p2 = p;
+    const pixelDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+    // Odstraň dočasné tečky
+    canvas.getObjects().filter(o => o._calibDot).forEach(o => canvas.remove(o));
+
+    if (pixelDist < 5) {
+      toast('Body jsou příliš blízko, zkuste znovu (K)');
+      _calibState = null;
+      setTool('select');
+      return;
+    }
+
+    const realMM = parseFloat(prompt(
+      `Naměřená vzdálenost na výkrese: ${Math.round(pixelDist)}px\nZadejte skutečnou vzdálenost v mm:`
+    ));
+
+    if (!realMM || isNaN(realMM) || realMM <= 0) {
+      toast('Kalibrace zrušena');
+      _calibState = null;
+      setTool('select');
+      return;
+    }
+
+    const scaleFactor = realMM / pixelDist;
+    const obj = _calibState.targetObj;
+
+    obj.set({
+      scaleX: (obj.scaleX || 1) * scaleFactor,
+      scaleY: (obj.scaleY || 1) * scaleFactor,
+    });
+    obj.setCoords();
+    canvas.renderAll();
+    saveUndoState();
+
+    toast(`Kalibrováno: 1px = ${(1/scaleFactor).toFixed(2)}mm, měřítko upraveno`);
+    _calibState = null;
+    setTool('select');
+    canvas.setActiveObject(obj);
+  }
 }
 
 // ── LAYERS ─────────────────────────────────────────────────────────────────
@@ -1349,6 +1884,7 @@ function saveUndoState() {
   CAD.undoStack.push(JSON.stringify(json));
   if (CAD.undoStack.length > 50) CAD.undoStack.shift();
   CAD.redoStack = [];
+  if (_activeTabId) { const t = _drawingTabs.find(x=>x.id===_activeTabId); if(t){t.undoStack=CAD.undoStack;t.redoStack=[];} }
   autoSave();
 }
 
@@ -1408,13 +1944,7 @@ function copySelected() {
 }
 
 function newDrawing() {
-  if (!confirm('Vytvořit nový výkres? Neuložené změny budou ztraceny.')) return;
-  canvas.clear();
-  canvas.backgroundColor = '#1a1a2e';
-  CAD.undoStack = [];
-  CAD.redoStack = [];
-  drawGrid();
-  toast('Nový výkres');
+  addDrawingTab();
 }
 
 // ── ZOOM ───────────────────────────────────────────────────────────────────
@@ -1504,13 +2034,140 @@ async function handleImport(e) {
     toast('Importuji DXF…');
     const text = await file.text();
     parseDXF(text);
+    document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
   } else if (ext === 'pdf') {
-    toast('PDF import — bude přidán jako podkladová vrstva');
-    // TODO: pdf.js integration
+    await importPDF(file);
   } else if (ext === 'dwg') {
-    toast('DWG import vyžaduje konverzi na DXF');
+    try {
+      const text = await file.text();
+      if (text.includes('ENTITIES') || text.trimStart().startsWith('  0')) {
+        toast('DWG rozpoznán jako DXF — importuji…');
+        parseDXF(text);
+        document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+      } else {
+        toast('Binární DWG — otevřete ve FreeCAD a exportujte jako DXF');
+      }
+    } catch { toast('DWG: exportujte jako DXF ve FreeCAD nebo AutoCAD'); }
   }
-  document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+}
+
+// ── PDF VECTOR IMPORT ──────────────────────────────────────────────────────
+async function importPDF(file) {
+  toast('Načítám PDF.js…');
+  if (!window.pdfjsLib) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  try {
+    toast('Importuji PDF jako vektory…');
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const layer = getActiveLayer();
+    let count = 0;
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const vp   = page.getViewport({ scale: 1 });
+      const H    = vp.height;
+      const pageOffY = (pageNum - 1) * (H + 30);
+      const { fnArray, argsArray } = await page.getOperatorList();
+
+      let pathStr = '', strokeClr = layer.color, fillClr = 'transparent';
+      let ctm = [1,0,0,1,0,0];
+      const ctmStack = [];
+
+      const tr = (x, y) => ({
+        x:  ctm[0]*x + ctm[2]*y + ctm[4],
+        y:  H - (ctm[1]*x + ctm[3]*y + ctm[5]),
+      });
+
+      const commit = (stroke, fill) => {
+        if (!pathStr.trim()) return;
+        const obj = new fabric.Path(pathStr, {
+          stroke: stroke ? strokeClr : null,
+          fill:   fill   ? fillClr   : 'transparent',
+          strokeWidth: 0.8, selectable: true, evented: true,
+          _cadLayer: layer.id, _cadType: 'imported',
+        });
+        obj.set('top', (obj.top || 0) + pageOffY);
+        canvas.add(obj);
+        count++;
+        pathStr = '';
+      };
+
+      const O = pdfjsLib.OPS;
+      for (let i = 0; i < fnArray.length; i++) {
+        const fn = fnArray[i], a = argsArray[i];
+        switch (fn) {
+          case O.save:    ctmStack.push([...ctm]); break;
+          case O.restore: if (ctmStack.length) ctm = ctmStack.pop(); break;
+          case O.transform:
+            ctm = [ctm[0]*a[0]+ctm[2]*a[1], ctm[1]*a[0]+ctm[3]*a[1],
+                   ctm[0]*a[2]+ctm[2]*a[3], ctm[1]*a[2]+ctm[3]*a[3],
+                   ctm[0]*a[4]+ctm[2]*a[5]+ctm[4], ctm[1]*a[4]+ctm[3]*a[5]+ctm[5]];
+            break;
+          case O.setStrokeRGBColor:
+            strokeClr=`rgb(${Math.round(a[0]*255)},${Math.round(a[1]*255)},${Math.round(a[2]*255)})`; break;
+          case O.setFillRGBColor:
+            fillClr=`rgb(${Math.round(a[0]*255)},${Math.round(a[1]*255)},${Math.round(a[2]*255)})`; break;
+          case O.constructPath: {
+            const ops=a[0], cc=a[1]; let ci=0;
+            for (const op of ops) {
+              if (op===O.moveTo){const p=tr(cc[ci],cc[ci+1]);ci+=2;pathStr+=`M ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;}
+              else if(op===O.lineTo){const p=tr(cc[ci],cc[ci+1]);ci+=2;pathStr+=`L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;}
+              else if(op===O.curveTo){const p1=tr(cc[ci],cc[ci+1]),p2=tr(cc[ci+2],cc[ci+3]),p3=tr(cc[ci+4],cc[ci+5]);ci+=6;pathStr+=`C ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;}
+              else if(op===O.curveTo2){const p2=tr(cc[ci],cc[ci+1]),p3=tr(cc[ci+2],cc[ci+3]);ci+=4;pathStr+=`S ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;}
+              else if(op===O.curveTo3){const p1=tr(cc[ci],cc[ci+1]),p3=tr(cc[ci+2],cc[ci+3]);ci+=4;pathStr+=`Q ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;}
+              else if(op===O.rectangle){const rx=cc[ci],ry=cc[ci+1],rw=cc[ci+2],rh=cc[ci+3];ci+=4;const p1=tr(rx,ry),p2=tr(rx+rw,ry),p3=tr(rx+rw,ry+rh),p4=tr(rx,ry+rh);pathStr+=`M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} L ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} L ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} L ${p4.x.toFixed(1)} ${p4.y.toFixed(1)} Z `;}
+              else if(op===O.closePath){pathStr+='Z ';}
+            }
+            break;
+          }
+          case O.moveTo:   {const p=tr(a[0],a[1]);pathStr+=`M ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;break;}
+          case O.lineTo:   {const p=tr(a[0],a[1]);pathStr+=`L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;break;}
+          case O.curveTo:  {const p1=tr(a[0],a[1]),p2=tr(a[2],a[3]),p3=tr(a[4],a[5]);pathStr+=`C ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;break;}
+          case O.rectangle:{const p1=tr(a[0],a[1]),p2=tr(a[0]+a[2],a[1]),p3=tr(a[0]+a[2],a[1]+a[3]),p4=tr(a[0],a[1]+a[3]);pathStr+=`M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} L ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} L ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} L ${p4.x.toFixed(1)} ${p4.y.toFixed(1)} Z `;break;}
+          case O.closePath: pathStr+='Z '; break;
+          case O.stroke:         commit(true,false);  break;
+          case O.closeStroke:    pathStr+='Z '; commit(true,false);  break;
+          case O.fill:
+          case O.eoFill:         commit(false,true);  break;
+          case O.fillStroke:
+          case O.eoFillStroke:   commit(true,true);   break;
+          case O.closeFillStroke:
+          case O.closeEOFillStroke: pathStr+='Z '; commit(true,true); break;
+          case O.endPath: pathStr=''; break;
+        }
+      }
+    }
+    // Seskupit všechny importované objekty do jednoho manipulovatelného celku
+    const imported = canvas.getObjects().filter(o => o._cadType === 'imported');
+    if (imported.length > 1) {
+      imported.forEach(o => canvas.remove(o));
+      const grp = new fabric.Group(imported, {
+        _cadLayer: layer.id, _cadType: 'imported_group',
+        selectable: true, evented: true,
+        hasControls: true, hasBorders: true,
+      });
+      canvas.add(grp);
+      canvas.setActiveObject(grp);
+      count = 1;
+    } else if (imported.length === 1) {
+      canvas.setActiveObject(imported[0]);
+    }
+    canvas.renderAll();
+    saveUndoState();
+    document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+    toast(`PDF importováno jako skupina — otáčejte rohovou ikonou, kalibrujte přes Soubor › Kalibrovat měřítko`);
+  } catch (err) {
+    console.error('PDF import:', err);
+    toast('Chyba PDF importu: ' + err.message);
+  }
 }
 
 // Basic DXF parser (lines, circles, arcs, text)
@@ -1738,6 +2395,11 @@ async function autoSave() {
     const data = {
       canvasJSON: canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']),
       cad: { scale: CAD.scale, paperSize: CAD.paperSize, gridSize: CAD.gridSize, layers: CAD.layers, titleBlock: CAD.titleBlock },
+      tabs: _drawingTabs.map(t => t.id === _activeTabId
+        ? { ...t, canvasJSON: canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']), scale: CAD.scale, paperSize: CAD.paperSize, gridSize: CAD.gridSize, layers: JSON.parse(JSON.stringify(CAD.layers)), titleBlock: JSON.parse(JSON.stringify(CAD.titleBlock)) }
+        : t),
+      activeTabId: _activeTabId,
+      tabCounter: _tabCounter,
       _ts: Date.now(),
     };
     store.put(data, IDB_KEY);
@@ -1764,6 +2426,33 @@ async function loadFromIndexedDB() {
         document.getElementById('diScale').textContent = CAD.scale;
         document.getElementById('diName').textContent = CAD.titleBlock.drawingTitle || CAD.titleBlock.drawingNumber || 'Nový výkres';
         renderLayers();
+      }
+      if (data.tabs && data.tabs.length > 0) {
+        _drawingTabs = data.tabs;
+        _activeTabId = data.activeTabId || data.tabs[0].id;
+        _tabCounter = data.tabCounter || data.tabs.length;
+        const activeTab = _drawingTabs.find(t => t.id === _activeTabId) || _drawingTabs[0];
+        _activeTabId = activeTab.id;
+        CAD.scale = activeTab.scale || CAD.scale;
+        CAD.paperSize = activeTab.paperSize || CAD.paperSize;
+        CAD.gridSize = activeTab.gridSize || CAD.gridSize;
+        if (activeTab.layers) CAD.layers = activeTab.layers;
+        if (activeTab.titleBlock) CAD.titleBlock = activeTab.titleBlock;
+        CAD.undoStack = activeTab.undoStack || [];
+        CAD.redoStack = activeTab.redoStack || [];
+        document.getElementById('scaleSelect').value = CAD.scale;
+        document.getElementById('gridSizeInput').value = CAD.gridSize;
+        document.getElementById('paperSelect').value = CAD.paperSize;
+        document.getElementById('diScale').textContent = CAD.scale;
+        document.getElementById('diName').textContent = activeTab.name;
+        renderLayers();
+        renderTabs();
+        if (activeTab.canvasJSON) {
+          canvas.loadFromJSON(activeTab.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
+        }
+        db.close();
+        toast('Obnoveno z poslední session');
+        return;
       }
       if (data.canvasJSON) {
         canvas.loadFromJSON(data.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
@@ -1796,8 +2485,56 @@ function toast(msg) {
   el._timer = setTimeout(() => el.classList.remove('show'), 2500);
 }
 
+// ── COORDINATE INPUT ───────────────────────────────────────────────────────
+let _cmdBuffer = '';
+let _cmdActive = false;
+
+function updateCmdDisplay() {
+  const line = document.getElementById('cmdLine');
+  const buf  = document.getElementById('cmdBuffer');
+  if (!line || !buf) return;
+  if (_cmdActive) {
+    line.style.display = 'flex';
+    buf.textContent = _cmdBuffer;
+  } else {
+    line.style.display = 'none';
+    buf.textContent = '';
+  }
+}
+
+function applyCmdCoords() {
+  if (!_cmdBuffer) return;
+  const parts = _cmdBuffer.split(',').map(s => parseFloat(s.trim()));
+  const x = isNaN(parts[0]) ? null : parts[0];
+  const y = isNaN(parts[1]) ? null : parts[1];
+  if (x !== null && y !== null) {
+    // Set drawing start point at these canvas coords
+    const fakePoint = { x, y };
+    if (!_isDrawing && _activeTool !== 'select') {
+      // Simulate click at coordinates
+      _isDrawing = true;
+      _drawStart = fakePoint;
+      const layer = getActiveLayer();
+      _tempShape = new fabric.Line([x, y, x, y], {
+        stroke: layer.color, strokeWidth: 1.5,
+        selectable: false, evented: false, _cadLayer: layer.id,
+      });
+      canvas.add(_tempShape);
+      canvas.renderAll();
+      toast(`Start: X=${Math.round(x)}, Y=${Math.round(y)}`);
+    } else if (_isDrawing && _drawStart) {
+      // Complete the current drawing at these coords
+      handleToolMouseDown({ e: { button: 0, clientX: 0, clientY: 0, _synthetic: true, _point: fakePoint } });
+      toast(`Bod: X=${Math.round(x)}, Y=${Math.round(y)}`);
+    }
+  } else if (x !== null) {
+    toast(`X=${Math.round(x)}`);
+  }
+}
+
 // ── INIT ───────────────────────────────────────────────────────────────────
 bootAuth();
 </script>
 </body>
 </html>
+
