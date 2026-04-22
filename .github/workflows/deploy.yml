@@ -19,13 +19,12 @@ jobs:
 
       - name: Injektovat DB credentials
         run: |
-          for file in cad-besix-cz/api/cad.php cad-besix-cz/api/auth.php cad-besix-cz/login.php cad-besix-cz/sso-callback.php cad-besix-cz/index.php; do
+          for file in cad-besix-cz/api/cad.php cad-besix-cz/api/auth.php cad-besix-cz/login.php cad-besix-cz/index.php; do
             sed -i "s|\$DB_HOST = '.*';|\$DB_HOST = '${{ secrets.DB_HOST }}';|" $file
             sed -i "s|\$DB_NAME = '.*';|\$DB_NAME = '${{ secrets.DB_NAME }}';|" $file
             sed -i "s|\$DB_USER = '.*';|\$DB_USER = '${{ secrets.DB_USER }}';|" $file
             sed -i "s|\$DB_PASS = '.*';|\$DB_PASS = '${{ secrets.DB_PASS }}';|" $file
           done
-          sed -i "s|SSO_SECRET_PLACEHOLDER|${{ secrets.SSO_SECRET }}|" cad-besix-cz/sso-callback.php
 
       - name: Deploy přes FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5

@@ -207,39 +207,6 @@ try {
     text-transform: uppercase;
   }
   .btn-primary:hover { opacity: .85; }
-  .divider {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 20px 0;
-    color: var(--text2);
-    font-size: 11px;
-  }
-  .divider::before, .divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-  .btn-sso {
-    width: 100%;
-    background: #1e2730;
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 11px;
-    cursor: pointer;
-    transition: border-color .15s, background .15s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-  .btn-sso:hover { border-color: var(--accent); background: #252f3a; }
-  #ssoStatus { font-size: 12px; color: var(--accent); margin-top: 10px; text-align: center; display: none; }
   .error {
     background: rgba(224,92,92,.12);
     border: 1px solid rgba(224,92,92,.3);
@@ -258,6 +225,7 @@ try {
     <img src="/besix_logo_highres_transparent.png" alt="BeSix">
     <span>CAD</span>
   </div>
+  <p style="text-align:center;color:var(--text2);font-size:13px;margin-bottom:20px;">Přihlaste se svým BeSix účtem</p>
 
   <?php if ($error): ?>
     <div class="error"><?= htmlspecialchars($error) ?></div>
@@ -279,12 +247,5 @@ try {
     </label>
     <button type="submit" class="btn-primary">Přihlásit se</button>
   </form>
-
-  <div class="divider">nebo</div>
-
-  <a class="btn-sso" href="https://besix.cz/sso-token.php?redirect=<?= urlencode('https://cad.besix.cz/sso-callback.php') ?>">
-    <img src="/besix_logo_highres_transparent.png" style="height:16px;filter:invert(1)" alt="">
-    Přihlásit přes BeSix platformu
-  </a>
 </body>
 </html>
