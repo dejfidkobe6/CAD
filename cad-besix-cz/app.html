@@ -984,32 +984,12 @@ let _gridLines = [];
 
 // ── AUTH ────────────────────────────────────────────────────────────────────
 async function bootAuth() {
-  // 1. Rychlý ping — ověř že PHP backend vůbec odpovídá
-  try {
-    const pingCtrl = new AbortController();
-    setTimeout(() => pingCtrl.abort(), 5000);
-    await fetch('/api/ping.php', { signal: pingCtrl.signal });
-  } catch {
-    showAuthGate('PHP server nedostupný. Zkontrolujte hosting.');
+  // Uživatelská data jsou vložena PHP serverem — žádný fetch není potřeba
+  if (!window._USER) {
+    window.location.href = '/login.php';
     return;
   }
-
-  // 2. Auth check
-  let res, data;
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 8000);
-    res = await fetch('/api/auth.php?action=me', { credentials: 'include', signal: ctrl.signal });
-    data = await res.json();
-  } catch {
-    showAuthGate('Chyba ověření — zkuste se přihlásit znovu.');
-    return;
-  }
-  if (!res.ok || !data?.success || !data?.user) {
-    showAuthGate('Nejste přihlášeni.');
-    return;
-  }
-  _apiUser = data.user;
+  _apiUser = window._USER;
   applyUser();
   document.getElementById('authGate').style.display = 'none';
   initCAD();

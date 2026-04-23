@@ -1,7 +1,4 @@
 <?php
-// Server-side auth gate — PHP zkontroluje session před odesláním HTML
-// Žádný JavaScript cache problém nemůže obejít tuto kontrolu
-
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
@@ -11,7 +8,7 @@ $DB_NAME = 'besix_db';
 $DB_USER = 'besix_user';
 $DB_PASS = 'CHANGE_ME';
 
-$sessionName = session_name(); // PHPSESSID
+$sessionName = session_name();
 $hasCookie = !empty($_COOKIE[$sessionName]);
 
 if ($hasCookie) {
@@ -34,7 +31,6 @@ if (!$userId && isset($_COOKIE['besix_remember'])) {
         $stmt->execute([$_COOKIE['besix_remember']]);
         $row = $stmt->fetch();
         if ($row) {
-            // Musíme otevřít session pro zápis
             session_start();
             $_SESSION['user_id'] = (int)$row['user_id'];
             session_write_close();
@@ -48,5 +44,24 @@ if (!$userId) {
     exit;
 }
 
-// Uživatel je přihlášen — servíruj aplikaci
-readfile(__DIR__ . '/app.html');
+// Načti data uživatele z DB a vlož přímo do stránky — JS nepotřebuje žádný fetch
+try {
+    if (!isset($pdo)) {
+        $pdo = new PDO("mysql:host=$DB_HOST;dbname=$DB_NAME;charset=utf8mb4", $DB_USER, $DB_PASS,
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+    }
+    $stmt = $pdo->prepare('SELECT id, name, email, avatar_color FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $userData = $stmt->fetch();
+} catch (PDOException $e) {
+    $userData = null;
+}
+
+if (!$userData) {
+    header('Location: /login.php');
+    exit;
+}
+
+$userJson = json_encode($userData, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+$html = file_get_contents(__DIR__ . '/app.html');
+echo str_replace('</head>', '<script>window._USER=' . $userJson . ';</script></head>', $html);
