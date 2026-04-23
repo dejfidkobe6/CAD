@@ -77,17 +77,19 @@ try {
         $DB_USER, $DB_PASS,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
     );
-    $stmt = $pdo->prepare('SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id, name, email, avatar_color FROM users WHERE LOWER(email) = ? LIMIT 1');
     $stmt->execute([$email]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user) {
-        // Email z Google není v BeSix systému
         header('Location: /login.php?error=google_not_registered');
         exit;
     }
 
-    $_SESSION['user_id'] = (int)$user['id'];
+    $_SESSION['user_id']           = (int)$user['id'];
+    $_SESSION['user_name']         = $user['name'];
+    $_SESSION['user_email']        = $user['email'];
+    $_SESSION['user_avatar_color'] = $user['avatar_color'];
     session_write_close();
     header('Location: /');
     exit;

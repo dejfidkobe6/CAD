@@ -100,7 +100,10 @@ try {
             $user = $stmt->fetch();
 
             if ($user && password_verify($password, $user['password_hash'])) {
-                $_SESSION['user_id'] = (int)$user['id'];
+                $_SESSION['user_id']          = (int)$user['id'];
+                $_SESSION['user_name']        = $user['name'];
+                $_SESSION['user_email']       = $user['email'];
+                $_SESSION['user_avatar_color']= $user['avatar_color'];
 
                 if ($remember) {
                     $token = bin2hex(random_bytes(32));

@@ -18,10 +18,9 @@ $DB_PASS = 'CHANGE_ME';
 
 $action = $_GET['action'] ?? '';
 
-// ── Me ───────────────────────────────────────────────────────────────────────
+// ── Me — čte pouze ze session, žádný DB dotaz ────────────────────────────────
 if ($action === 'me') {
-    // Rychlá cesta: bez session_start pokud není cookie
-    $sessionName = session_name(); // default: PHPSESSID
+    $sessionName = session_name();
     if (empty($_COOKIE[$sessionName])) {
         http_response_code(401);
         echo json_encode(['success' => false, 'error' => 'Nepřihlášen']);
@@ -42,29 +41,12 @@ if ($action === 'me') {
         exit;
     }
 
-    try {
-        $pdo = new PDO(
-            "mysql:host=$DB_HOST;dbname=$DB_NAME;charset=utf8mb4",
-            $DB_USER, $DB_PASS,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
-        );
-    } catch (PDOException $e) {
-        http_response_code(503);
-        echo json_encode(['success' => false, 'error' => 'DB nedostupná']);
-        exit;
-    }
-
-    $stmt = $pdo->prepare('SELECT id, name, email, avatar_color FROM users WHERE id = ?');
-    $stmt->execute([$userId]);
-    $user = $stmt->fetch();
-
-    if (!$user) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'error' => 'Uživatel nenalezen']);
-        exit;
-    }
-
-    echo json_encode(['success' => true, 'user' => $user]);
+    echo json_encode(['success' => true, 'user' => [
+        'id'           => (int)$userId,
+        'name'         => $_SESSION['user_name']         ?? null,
+        'email'        => $_SESSION['user_email']        ?? null,
+        'avatar_color' => $_SESSION['user_avatar_color'] ?? null,
+    ]]);
     exit;
 }
 

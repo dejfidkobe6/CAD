@@ -20,21 +20,38 @@ if ($hasCookie) {
     session_start(['read_and_close' => true]);
 }
 
-$userId = $_SESSION['user_id'] ?? null;
+$userId        = $_SESSION['user_id']        ?? null;
+$userName      = $_SESSION['user_name']      ?? null;
+$userEmail     = $_SESSION['user_email']     ?? null;
+$userAvatarClr = $_SESSION['user_avatar_color'] ?? null;
 
-// Remember me fallback
+// Remember me fallback — DB dotaz jen při absenci session
 if (!$userId && isset($_COOKIE['besix_remember'])) {
     try {
         $pdo = new PDO("mysql:host=$DB_HOST;dbname=$DB_NAME;charset=utf8mb4", $DB_USER, $DB_PASS,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
-        $stmt = $pdo->prepare('SELECT user_id FROM remember_tokens WHERE token = ? AND expires_at > NOW()');
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+             PDO::MYSQL_ATTR_CONNECT_TIMEOUT => 5]);
+        $stmt = $pdo->prepare(
+            'SELECT u.id, u.name, u.email, u.avatar_color
+               FROM remember_tokens rt
+               JOIN users u ON u.id = rt.user_id
+              WHERE rt.token = ? AND rt.expires_at > NOW()
+              LIMIT 1'
+        );
         $stmt->execute([$_COOKIE['besix_remember']]);
         $row = $stmt->fetch();
         if ($row) {
             session_start();
-            $_SESSION['user_id'] = (int)$row['user_id'];
+            $_SESSION['user_id']        = (int)$row['id'];
+            $_SESSION['user_name']      = $row['name'];
+            $_SESSION['user_email']     = $row['email'];
+            $_SESSION['user_avatar_color'] = $row['avatar_color'];
             session_write_close();
-            $userId = (int)$row['user_id'];
+            $userId        = (int)$row['id'];
+            $userName      = $row['name'];
+            $userEmail     = $row['email'];
+            $userAvatarClr = $row['avatar_color'];
         }
     } catch (PDOException $e) {}
 }
@@ -44,23 +61,13 @@ if (!$userId) {
     exit;
 }
 
-// Načti data uživatele z DB a vlož přímo do stránky — JS nepotřebuje žádný fetch
-try {
-    if (!isset($pdo)) {
-        $pdo = new PDO("mysql:host=$DB_HOST;dbname=$DB_NAME;charset=utf8mb4", $DB_USER, $DB_PASS,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
-    }
-    $stmt = $pdo->prepare('SELECT id, name, email, avatar_color FROM users WHERE id = ?');
-    $stmt->execute([$userId]);
-    $userData = $stmt->fetch();
-} catch (PDOException $e) {
-    $userData = null;
-}
-
-if (!$userData) {
-    header('Location: /login.php');
-    exit;
-}
+// Vloží data uživatele ze session přímo do HTML — bez dalšího DB dotazu
+$userData = [
+    'id'           => (int)$userId,
+    'name'         => $userName,
+    'email'        => $userEmail,
+    'avatar_color' => $userAvatarClr,
+];
 
 $userJson = json_encode($userData, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
 $html = file_get_contents(__DIR__ . '/app.html');
