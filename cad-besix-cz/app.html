@@ -806,6 +806,62 @@ body {
   </div>
 </div>
 
+<!-- PDF IMPORT MODE DIALOG -->
+<div class="modal-overlay" id="pdfImportModal">
+  <div class="modal-box" style="max-width:480px;">
+    <div class="modal-title">Import PDF <button class="modal-close" onclick="closePdfImportModal()">✕</button></div>
+    <div class="modal-body">
+      <p style="color:var(--text2);font-size:13px;margin-bottom:16px;">Vyberte způsob importu:</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <label id="pdfOptBg" onclick="selectPdfMode('background')"
+          style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;padding:14px;border:2px solid var(--accent);border-radius:8px;">
+          <input type="radio" name="pdfMode" value="background" checked style="margin-top:2px;accent-color:var(--accent)">
+          <div>
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Podklad (rastr)</div>
+            <div style="font-size:12px;color:var(--text2);">PDF se vykreslí jako obrázek pod výkresem. Ideální pro situační plány, katastrální mapy a podklady pro překreslení.</div>
+          </div>
+        </label>
+        <label id="pdfOptVec" onclick="selectPdfMode('vector')"
+          style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;padding:14px;border:2px solid var(--border);border-radius:8px;">
+          <input type="radio" name="pdfMode" value="vector" style="margin-top:2px;accent-color:var(--accent)">
+          <div>
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Vektory (čáry, plochy, text)</div>
+            <div style="font-size:12px;color:var(--text2);">PDF se převede na editovatelné objekty. Nejlépe funguje pro vektorové CAD výkresy uložené jako PDF.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closePdfImportModal()">Zrušit</button>
+      <button class="btn btn-primary" onclick="confirmPdfImport()">Importovat</button>
+    </div>
+  </div>
+</div>
+
+<!-- CALIBRATE DISTANCE DIALOG -->
+<div class="modal-overlay" id="calibrateModal">
+  <div class="modal-box" style="max-width:380px;">
+    <div class="modal-title">Kalibrovat měřítko <button class="modal-close" onclick="closeCalibrateModal(true)">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px;">
+        Označená vzdálenost: <strong id="calibPxLabel" style="color:var(--accent)"></strong>
+      </p>
+      <div class="form-group">
+        <label style="font-size:11px;font-weight:600;letter-spacing:.5px;color:var(--text2);text-transform:uppercase;margin-bottom:6px;display:block">Skutečná vzdálenost (mm)</label>
+        <input id="calibRealDist" type="number" min="0.01" step="any" placeholder="např. 5000"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:inherit;font-size:14px;padding:9px 12px;outline:none;transition:border-color .15s"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor=''"
+          onkeydown="if(event.key==='Enter')confirmCalibrate()">
+      </div>
+      <p id="calibHint" style="font-size:12px;color:var(--text2);min-height:18px;margin-top:4px;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCalibrateModal(true)">Zrušit</button>
+      <button class="btn btn-primary" onclick="confirmCalibrate()">Aplikovat</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -1694,69 +1750,108 @@ function setupKeyboard() {
 let _calibState = null; // null | { p1, targetObj }
 
 function startCalibrate() {
-  const active = canvas.getActiveObject();
-  if (!active) {
-    toast('Nejdřív vyberte importovaný výkres');
-    return;
-  }
-  _calibState = { p1: null, targetObj: active };
+  _calibState = { p1: null, targetObj: canvas.getActiveObject() || null };
   setTool('calibrate');
-  toast('KALIBRACE: klikněte na první bod referenční kóty');
+  const hint = _calibState.targetObj ? '' : ' (bez výběru — škáluje vše)';
+  toast(`KALIBRACE${hint}: klikněte na první bod kóty`);
 }
 
 function handleCalibrateClick(p) {
   if (!_calibState) return;
   if (!_calibState.p1) {
     _calibState.p1 = p;
-    // Nakresli dočasný bod
-    const dot = new fabric.Circle({ left: p.x, top: p.y, radius: 4,
-      fill: '#c9922a', originX: 'center', originY: 'center',
-      selectable: false, evented: false, excludeFromExport: true, _calibDot: true });
+    const dot = new fabric.Circle({
+      left: p.x, top: p.y, radius: 5,
+      fill: 'var(--accent,#c9922a)', stroke: '#fff', strokeWidth: 1.5,
+      originX: 'center', originY: 'center',
+      selectable: false, evented: false,
+      excludeFromExport: true, _calibDot: true,
+    });
     canvas.add(dot);
     canvas.renderAll();
-    toast('KALIBRACE: klikněte na druhý bod referenční kóty');
+    toast('KALIBRACE: klikněte na druhý bod kóty');
   } else {
-    const p1 = _calibState.p1;
     const p2 = p;
-    const pixelDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-
-    // Odstraň dočasné tečky
+    const pixelDist = Math.hypot(p2.x - _calibState.p1.x, p2.y - _calibState.p1.y);
     canvas.getObjects().filter(o => o._calibDot).forEach(o => canvas.remove(o));
 
-    if (pixelDist < 5) {
-      toast('Body jsou příliš blízko, zkuste znovu (K)');
+    // Draw a line between the two points so user can see the measured span
+    const line = new fabric.Line(
+      [_calibState.p1.x, _calibState.p1.y, p2.x, p2.y],
+      { stroke: '#c9922a', strokeWidth: 1.5, strokeDashArray: [6,4],
+        selectable: false, evented: false, excludeFromExport: true, _calibDot: true }
+    );
+    canvas.add(line);
+    canvas.renderAll();
+
+    if (pixelDist < 3) {
+      canvas.getObjects().filter(o => o._calibDot).forEach(o => canvas.remove(o));
+      toast('Body jsou příliš blízko — zkuste znovu (K)');
       _calibState = null;
       setTool('select');
       return;
     }
 
-    const realMM = parseFloat(prompt(
-      `Naměřená vzdálenost na výkrese: ${Math.round(pixelDist)}px\nZadejte skutečnou vzdálenost v mm:`
-    ));
+    _calibState.pixelDist = pixelDist;
+    document.getElementById('calibPxLabel').textContent = Math.round(pixelDist) + ' px';
+    document.getElementById('calibHint').textContent = '';
+    const inp = document.getElementById('calibRealDist');
+    inp.value = '';
+    document.getElementById('calibrateModal').classList.add('open');
+    setTimeout(() => inp.focus(), 80);
+  }
+}
 
-    if (!realMM || isNaN(realMM) || realMM <= 0) {
-      toast('Kalibrace zrušena');
-      _calibState = null;
-      setTool('select');
-      return;
-    }
+function closeCalibrateModal(cancel) {
+  document.getElementById('calibrateModal').classList.remove('open');
+  canvas.getObjects().filter(o => o._calibDot).forEach(o => canvas.remove(o));
+  canvas.renderAll();
+  if (cancel) {
+    toast('Kalibrace zrušena');
+    _calibState = null;
+    setTool('select');
+  }
+}
 
-    const scaleFactor = realMM / pixelDist;
-    const obj = _calibState.targetObj;
+function confirmCalibrate() {
+  const realMM = parseFloat(document.getElementById('calibRealDist').value);
+  if (!realMM || isNaN(realMM) || realMM <= 0) {
+    document.getElementById('calibHint').textContent = 'Zadejte platnou kladnou hodnotu v mm.';
+    return;
+  }
+  closeCalibrateModal(false);
 
+  const scaleFactor = realMM / _calibState.pixelDist;
+  const obj = _calibState.targetObj;
+
+  if (obj) {
+    // Scale only the selected object (imported PDF / group)
     obj.set({
       scaleX: (obj.scaleX || 1) * scaleFactor,
       scaleY: (obj.scaleY || 1) * scaleFactor,
     });
     obj.setCoords();
-    canvas.renderAll();
-    saveUndoState();
-
-    toast(`Kalibrováno: 1px = ${(1/scaleFactor).toFixed(2)}mm, měřítko upraveno`);
-    _calibState = null;
-    setTool('select');
     canvas.setActiveObject(obj);
+  } else {
+    // No selection — scale every non-background object relative to canvas origin
+    canvas.getObjects().forEach(o => {
+      if (o.excludeFromExport) return;
+      o.set({
+        left:   (o.left  || 0) * scaleFactor,
+        top:    (o.top   || 0) * scaleFactor,
+        scaleX: (o.scaleX || 1) * scaleFactor,
+        scaleY: (o.scaleY || 1) * scaleFactor,
+      });
+      o.setCoords();
+    });
   }
+
+  canvas.renderAll();
+  saveUndoState();
+  const pxPerMm = (1 / scaleFactor).toFixed(3);
+  toast(`Kalibrováno: 1 mm = ${(scaleFactor).toFixed(3)} px`);
+  _calibState = null;
+  setTool('select');
 }
 
 // ── LAYERS ─────────────────────────────────────────────────────────────────
@@ -2017,7 +2112,8 @@ async function handleImport(e) {
     parseDXF(text);
     document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
   } else if (ext === 'pdf') {
-    await importPDF(file);
+    showPdfImportModal(file);
+    return;
   } else if (ext === 'dwg') {
     try {
       const text = await file.text();
@@ -2032,47 +2128,141 @@ async function handleImport(e) {
   }
 }
 
-// ── PDF VECTOR IMPORT ──────────────────────────────────────────────────────
-async function importPDF(file) {
-  toast('Načítám PDF.js…');
-  if (!window.pdfjsLib) {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  }
+// ── PDF IMPORT DIALOG ──────────────────────────────────────────────────────
+let _pdfImportFile = null;
+let _pdfImportMode = 'background';
+
+function showPdfImportModal(file) {
+  _pdfImportFile = file;
+  selectPdfMode('background');
+  document.getElementById('pdfImportModal').classList.add('open');
+}
+function closePdfImportModal() {
+  document.getElementById('pdfImportModal').classList.remove('open');
+  _pdfImportFile = null;
+}
+function selectPdfMode(mode) {
+  _pdfImportMode = mode;
+  document.getElementById('pdfOptBg').style.borderColor  = mode === 'background' ? 'var(--accent)' : 'var(--border)';
+  document.getElementById('pdfOptVec').style.borderColor = mode === 'vector'     ? 'var(--accent)' : 'var(--border)';
+  document.querySelector(`input[name="pdfMode"][value="${mode}"]`).checked = true;
+}
+async function confirmPdfImport() {
+  closePdfImportModal();
+  const file = _pdfImportFile;
+  _pdfImportFile = null;
+  if (!file) return;
+  if (_pdfImportMode === 'background') await importPDFBackground(file);
+  else                                 await importPDFVectors(file);
+}
+
+// ── SHARED PDF.JS LOADER ────────────────────────────────────────────────────
+async function ensurePdfJs() {
+  if (window.pdfjsLib) return;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// ── PDF BACKGROUND (RASTR) ──────────────────────────────────────────────────
+async function importPDFBackground(file) {
+  toast('Načítám PDF…');
   try {
+    await ensurePdfJs();
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const layer = getActiveLayer();
+    let offsetY = 0;
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      toast(`Renderuji stranu ${pageNum}/${pdf.numPages}…`);
+      const page = await pdf.getPage(pageNum);
+      const vp = page.getViewport({ scale: 2 });
+
+      const offscreen = document.createElement('canvas');
+      offscreen.width  = Math.round(vp.width);
+      offscreen.height = Math.round(vp.height);
+      const ctx2d = offscreen.getContext('2d');
+      ctx2d.fillStyle = '#ffffff';
+      ctx2d.fillRect(0, 0, offscreen.width, offscreen.height);
+      await page.render({ canvasContext: ctx2d, viewport: vp }).promise;
+
+      const dataUrl = offscreen.toDataURL('image/png');
+      const pageH = offscreen.height;
+      const pageW = offscreen.width;
+
+      await new Promise(resolve => {
+        fabric.Image.fromURL(dataUrl, img => {
+          img.set({
+            left: 0,
+            top: offsetY,
+            scaleX: 0.5,
+            scaleY: 0.5,
+            selectable: true,
+            evented: true,
+            _cadLayer: layer.id,
+            _cadType: 'pdf_background',
+          });
+          canvas.add(img);
+          canvas.sendToBack(img);
+          offsetY += pageH * 0.5 + 40;
+          resolve();
+        });
+      });
+    }
+
+    canvas.renderAll();
+    saveUndoState();
+    document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+    toast('PDF importováno jako podklad — kalibrujte přes Soubor › Kalibrovat měřítko');
+  } catch (err) {
+    console.error('PDF background import:', err);
+    toast('Chyba importu PDF: ' + err.message);
+  }
+}
+
+// ── PDF VECTOR IMPORT ──────────────────────────────────────────────────────
+async function importPDFVectors(file) {
+  toast('Načítám PDF.js…');
+  try {
+    await ensurePdfJs();
     toast('Importuji PDF jako vektory…');
     const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
     const layer = getActiveLayer();
     let count = 0;
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      if (pdf.numPages > 1) toast(`Převádím stranu ${pageNum}/${pdf.numPages}…`);
       const page = await pdf.getPage(pageNum);
       const vp   = page.getViewport({ scale: 1 });
       const H    = vp.height;
-      const pageOffY = (pageNum - 1) * (H + 30);
+      const pageOffY = (pageNum - 1) * (H + 40);
       const { fnArray, argsArray } = await page.getOperatorList();
 
-      let pathStr = '', strokeClr = layer.color, fillClr = 'transparent';
+      let pathStr = '', strokeClr = '#000000', fillClr = 'transparent';
+      let strokeW = 1;
       let ctm = [1,0,0,1,0,0];
       const ctmStack = [];
+      const gStateStack = [];
+      let currentFill = 'transparent', currentStroke = '#000000';
 
       const tr = (x, y) => ({
-        x:  ctm[0]*x + ctm[2]*y + ctm[4],
-        y:  H - (ctm[1]*x + ctm[3]*y + ctm[5]),
+        x: ctm[0]*x + ctm[2]*y + ctm[4],
+        y: H - (ctm[1]*x + ctm[3]*y + ctm[5]),
       });
 
-      const commit = (stroke, fill) => {
+      const commit = (doStroke, doFill) => {
         if (!pathStr.trim()) return;
+        // Skip trivially tiny paths (noise)
         const obj = new fabric.Path(pathStr, {
-          stroke: stroke ? strokeClr : null,
-          fill:   fill   ? fillClr   : 'transparent',
-          strokeWidth: 0.8, selectable: true, evented: true,
+          stroke:      doStroke ? strokeClr : null,
+          fill:        doFill   ? fillClr   : 'transparent',
+          strokeWidth: doStroke ? Math.max(strokeW, 0.5) : 0,
+          selectable: true, evented: true,
           _cadLayer: layer.id, _cadType: 'imported',
         });
         obj.set('top', (obj.top || 0) + pageOffY);
@@ -2085,48 +2275,99 @@ async function importPDF(file) {
       for (let i = 0; i < fnArray.length; i++) {
         const fn = fnArray[i], a = argsArray[i];
         switch (fn) {
-          case O.save:    ctmStack.push([...ctm]); break;
-          case O.restore: if (ctmStack.length) ctm = ctmStack.pop(); break;
+          case O.save:
+            ctmStack.push([...ctm]);
+            gStateStack.push({ strokeClr, fillClr, strokeW });
+            break;
+          case O.restore:
+            if (ctmStack.length)  ctm = ctmStack.pop();
+            if (gStateStack.length) { const g = gStateStack.pop(); strokeClr=g.strokeClr; fillClr=g.fillClr; strokeW=g.strokeW; }
+            break;
           case O.transform:
             ctm = [ctm[0]*a[0]+ctm[2]*a[1], ctm[1]*a[0]+ctm[3]*a[1],
                    ctm[0]*a[2]+ctm[2]*a[3], ctm[1]*a[2]+ctm[3]*a[3],
                    ctm[0]*a[4]+ctm[2]*a[5]+ctm[4], ctm[1]*a[4]+ctm[3]*a[5]+ctm[5]];
             break;
           case O.setStrokeRGBColor:
-            strokeClr=`rgb(${Math.round(a[0]*255)},${Math.round(a[1]*255)},${Math.round(a[2]*255)})`; break;
+            strokeClr = `rgb(${Math.round(a[0]*255)},${Math.round(a[1]*255)},${Math.round(a[2]*255)})`; break;
           case O.setFillRGBColor:
-            fillClr=`rgb(${Math.round(a[0]*255)},${Math.round(a[1]*255)},${Math.round(a[2]*255)})`; break;
+            fillClr = `rgb(${Math.round(a[0]*255)},${Math.round(a[1]*255)},${Math.round(a[2]*255)})`; break;
+          case O.setStrokeCMYKColor:
+            { const r=(1-a[0])*(1-a[3]),g=(1-a[1])*(1-a[3]),b=(1-a[2])*(1-a[3]);
+              strokeClr=`rgb(${Math.round(r*255)},${Math.round(g*255)},${Math.round(b*255)})`; break; }
+          case O.setFillCMYKColor:
+            { const r=(1-a[0])*(1-a[3]),g=(1-a[1])*(1-a[3]),b=(1-a[2])*(1-a[3]);
+              fillClr=`rgb(${Math.round(r*255)},${Math.round(g*255)},${Math.round(b*255)})`; break; }
+          case O.setStrokeGray:
+            { const v=Math.round(a[0]*255); strokeClr=`rgb(${v},${v},${v})`; break; }
+          case O.setFillGray:
+            { const v=Math.round(a[0]*255); fillClr=`rgb(${v},${v},${v})`; break; }
+          case O.setLineWidth: strokeW = a[0]; break;
           case O.constructPath: {
             const ops=a[0], cc=a[1]; let ci=0;
             for (const op of ops) {
-              if (op===O.moveTo){const p=tr(cc[ci],cc[ci+1]);ci+=2;pathStr+=`M ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;}
-              else if(op===O.lineTo){const p=tr(cc[ci],cc[ci+1]);ci+=2;pathStr+=`L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;}
-              else if(op===O.curveTo){const p1=tr(cc[ci],cc[ci+1]),p2=tr(cc[ci+2],cc[ci+3]),p3=tr(cc[ci+4],cc[ci+5]);ci+=6;pathStr+=`C ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;}
-              else if(op===O.curveTo2){const p2=tr(cc[ci],cc[ci+1]),p3=tr(cc[ci+2],cc[ci+3]);ci+=4;pathStr+=`S ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;}
-              else if(op===O.curveTo3){const p1=tr(cc[ci],cc[ci+1]),p3=tr(cc[ci+2],cc[ci+3]);ci+=4;pathStr+=`Q ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;}
-              else if(op===O.rectangle){const rx=cc[ci],ry=cc[ci+1],rw=cc[ci+2],rh=cc[ci+3];ci+=4;const p1=tr(rx,ry),p2=tr(rx+rw,ry),p3=tr(rx+rw,ry+rh),p4=tr(rx,ry+rh);pathStr+=`M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} L ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} L ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} L ${p4.x.toFixed(1)} ${p4.y.toFixed(1)} Z `;}
-              else if(op===O.closePath){pathStr+='Z ';}
+              if      (op===O.moveTo)    { const p=tr(cc[ci],cc[ci+1]);ci+=2; pathStr+=`M ${p.x.toFixed(2)} ${p.y.toFixed(2)} `; }
+              else if (op===O.lineTo)    { const p=tr(cc[ci],cc[ci+1]);ci+=2; pathStr+=`L ${p.x.toFixed(2)} ${p.y.toFixed(2)} `; }
+              else if (op===O.curveTo)   { const p1=tr(cc[ci],cc[ci+1]),p2=tr(cc[ci+2],cc[ci+3]),p3=tr(cc[ci+4],cc[ci+5]);ci+=6; pathStr+=`C ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} ${p3.x.toFixed(2)} ${p3.y.toFixed(2)} `; }
+              else if (op===O.curveTo2)  { const p2=tr(cc[ci],cc[ci+1]),p3=tr(cc[ci+2],cc[ci+3]);ci+=4; pathStr+=`S ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} ${p3.x.toFixed(2)} ${p3.y.toFixed(2)} `; }
+              else if (op===O.curveTo3)  { const p1=tr(cc[ci],cc[ci+1]),p3=tr(cc[ci+2],cc[ci+3]);ci+=4; pathStr+=`Q ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} ${p3.x.toFixed(2)} ${p3.y.toFixed(2)} `; }
+              else if (op===O.rectangle) { const rx=cc[ci],ry=cc[ci+1],rw=cc[ci+2],rh=cc[ci+3];ci+=4; const p1=tr(rx,ry),p2=tr(rx+rw,ry),p3=tr(rx+rw,ry+rh),p4=tr(rx,ry+rh); pathStr+=`M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} L ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} L ${p3.x.toFixed(2)} ${p3.y.toFixed(2)} L ${p4.x.toFixed(2)} ${p4.y.toFixed(2)} Z `; }
+              else if (op===O.closePath) { pathStr+='Z '; }
             }
             break;
           }
-          case O.moveTo:   {const p=tr(a[0],a[1]);pathStr+=`M ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;break;}
-          case O.lineTo:   {const p=tr(a[0],a[1]);pathStr+=`L ${p.x.toFixed(1)} ${p.y.toFixed(1)} `;break;}
-          case O.curveTo:  {const p1=tr(a[0],a[1]),p2=tr(a[2],a[3]),p3=tr(a[4],a[5]);pathStr+=`C ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} `;break;}
-          case O.rectangle:{const p1=tr(a[0],a[1]),p2=tr(a[0]+a[2],a[1]),p3=tr(a[0]+a[2],a[1]+a[3]),p4=tr(a[0],a[1]+a[3]);pathStr+=`M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} L ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} L ${p3.x.toFixed(1)} ${p3.y.toFixed(1)} L ${p4.x.toFixed(1)} ${p4.y.toFixed(1)} Z `;break;}
-          case O.closePath: pathStr+='Z '; break;
-          case O.stroke:         commit(true,false);  break;
-          case O.closeStroke:    pathStr+='Z '; commit(true,false);  break;
+          case O.moveTo:    { const p=tr(a[0],a[1]); pathStr+=`M ${p.x.toFixed(2)} ${p.y.toFixed(2)} `; break; }
+          case O.lineTo:    { const p=tr(a[0],a[1]); pathStr+=`L ${p.x.toFixed(2)} ${p.y.toFixed(2)} `; break; }
+          case O.curveTo:   { const p1=tr(a[0],a[1]),p2=tr(a[2],a[3]),p3=tr(a[4],a[5]); pathStr+=`C ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} ${p3.x.toFixed(2)} ${p3.y.toFixed(2)} `; break; }
+          case O.rectangle: { const p1=tr(a[0],a[1]),p2=tr(a[0]+a[2],a[1]),p3=tr(a[0]+a[2],a[1]+a[3]),p4=tr(a[0],a[1]+a[3]); pathStr+=`M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} L ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} L ${p3.x.toFixed(2)} ${p3.y.toFixed(2)} L ${p4.x.toFixed(2)} ${p4.y.toFixed(2)} Z `; break; }
+          case O.closePath:           pathStr += 'Z '; break;
+          case O.stroke:              commit(true, false); break;
+          case O.closeStroke:         pathStr += 'Z '; commit(true, false); break;
           case O.fill:
-          case O.eoFill:         commit(false,true);  break;
+          case O.eoFill:              commit(false, true); break;
           case O.fillStroke:
-          case O.eoFillStroke:   commit(true,true);   break;
+          case O.eoFillStroke:        commit(true, true); break;
           case O.closeFillStroke:
-          case O.closeEOFillStroke: pathStr+='Z '; commit(true,true); break;
-          case O.endPath: pathStr=''; break;
+          case O.closeEOFillStroke:   pathStr += 'Z '; commit(true, true); break;
+          case O.endPath:             pathStr = ''; break;
         }
       }
+
+      // ── Text extraction ────────────────────────────────────────────────────
+      try {
+        const textContent = await page.getTextContent({ includeMarkedContent: false });
+        const vpTr = vp.transform; // [sx, 0, 0, sy, tx, ty] maps PDF→canvas coords
+
+        for (const item of textContent.items) {
+          if (!('str' in item) || !item.str.trim()) continue;
+          // item.transform: [a,b,c,d,e,f] text matrix in PDF user space
+          // Apply viewport transform to get canvas coords
+          const tm = item.transform;
+          // Combined: viewport.transform ∘ item.transform
+          const cx = vpTr[0]*tm[4] + vpTr[2]*tm[5] + vpTr[4];
+          const cy = vpTr[1]*tm[4] + vpTr[3]*tm[5] + vpTr[5];
+          const fontSizePt = Math.sqrt(tm[0]*tm[0] + tm[1]*tm[1]);
+          const fontSizePx = fontSizePt * Math.abs(vpTr[0]);
+
+          const fabText = new fabric.Text(item.str, {
+            left: cx,
+            top:  cy - fontSizePx + pageOffY,
+            fontSize: Math.max(fontSizePx, 5),
+            fontFamily: item.fontName?.includes('Bold') ? 'Arial' : 'Arial',
+            fontWeight: item.fontName?.toLowerCase().includes('bold') ? 'bold' : 'normal',
+            fill: '#000000',
+            selectable: true,
+            evented: true,
+            _cadLayer: layer.id,
+            _cadType: 'imported',
+          });
+          canvas.add(fabText);
+          count++;
+        }
+      } catch (_) { /* text extraction optional */ }
     }
-    // Seskupit všechny importované objekty do jednoho manipulovatelného celku
+
+    // Group all imported objects
     const imported = canvas.getObjects().filter(o => o._cadType === 'imported');
     if (imported.length > 1) {
       imported.forEach(o => canvas.remove(o));
@@ -2137,17 +2378,16 @@ async function importPDF(file) {
       });
       canvas.add(grp);
       canvas.setActiveObject(grp);
-      count = 1;
     } else if (imported.length === 1) {
       canvas.setActiveObject(imported[0]);
     }
     canvas.renderAll();
     saveUndoState();
     document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
-    toast(`PDF importováno jako skupina — otáčejte rohovou ikonou, kalibrujte přes Soubor › Kalibrovat měřítko`);
+    toast(`PDF vektorizováno (${count} obj.) — kalibrujte měřítko přes Soubor › Kalibrovat měřítko`);
   } catch (err) {
-    console.error('PDF import:', err);
-    toast('Chyba PDF importu: ' + err.message);
+    console.error('PDF vector import:', err);
+    toast('Chyba importu PDF: ' + err.message);
   }
 }
 
