@@ -984,15 +984,33 @@ let _gridLines = [];
 
 // ── AUTH ────────────────────────────────────────────────────────────────────
 async function bootAuth() {
-  // Uživatelská data jsou vložena PHP serverem — žádný fetch není potřeba
-  if (!window._USER) {
-    window.location.href = '/login.php';
+  // Fast path: PHP vložil data přímo do stránky
+  if (window._USER) {
+    _apiUser = window._USER;
+    try { applyUser(); } catch(e) { console.error('applyUser:', e); }
+    document.getElementById('authGate').style.display = 'none';
+    initCAD();
     return;
   }
-  _apiUser = window._USER;
-  applyUser();
-  document.getElementById('authGate').style.display = 'none';
-  initCAD();
+
+  // Fallback: PHP injekce selhala, zkus auth.php
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch('/api/auth.php?action=me', { credentials: 'include', signal: ctrl.signal });
+    const data = await res.json();
+    if (res.ok && data?.success && data?.user) {
+      _apiUser = data.user;
+      try { applyUser(); } catch(e) {}
+      document.getElementById('authGate').style.display = 'none';
+      initCAD();
+      return;
+    }
+  } catch(e) {}
+
+  // Nepřihlášen
+  document.getElementById('authGateMsg').textContent = 'Přihlaste se prosím.';
+  document.getElementById('authGateBtn').style.display = 'inline-block';
 }
 
 function showAuthGate(msg) {
