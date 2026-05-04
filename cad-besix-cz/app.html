@@ -2181,7 +2181,9 @@ async function importPDFBackground(file) {
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       toast(`Renderuji stranu ${pageNum}/${pdf.numPages}…`);
       const page = await pdf.getPage(pageNum);
-      const vp = page.getViewport({ scale: 2 });
+      // Scale=1.5 for good quality without excessive memory
+      const scale = Math.min(2, 3000 / Math.max(page.view[2], page.view[3]));
+      const vp = page.getViewport({ scale });
 
       const offscreen = document.createElement('canvas');
       offscreen.width  = Math.round(vp.width);
@@ -2191,31 +2193,35 @@ async function importPDFBackground(file) {
       ctx2d.fillRect(0, 0, offscreen.width, offscreen.height);
       await page.render({ canvasContext: ctx2d, viewport: vp }).promise;
 
-      const dataUrl = offscreen.toDataURL('image/png');
-      const pageH = offscreen.height;
-      const pageW = offscreen.width;
-
-      await new Promise(resolve => {
-        fabric.Image.fromURL(dataUrl, img => {
-          img.set({
-            left: 0,
-            top: offsetY,
-            scaleX: 0.5,
-            scaleY: 0.5,
-            selectable: true,
-            evented: true,
-            _cadLayer: layer.id,
-            _cadType: 'pdf_background',
-          });
-          canvas.add(img);
-          canvas.sendToBack(img);
-          offsetY += pageH * 0.5 + 40;
-          resolve();
-        });
+      // Create HTMLImageElement from canvas so Fabric gets a proper image element
+      const dataUrl = offscreen.toDataURL('image/jpeg', 0.92);
+      const imgEl = document.createElement('img');
+      await new Promise((res, rej) => {
+        imgEl.onload = res;
+        imgEl.onerror = rej;
+        imgEl.src = dataUrl;
       });
+
+      const fabricImg = new fabric.Image(imgEl, {
+        left: 0,
+        top:  offsetY,
+        scaleX: 1 / scale,
+        scaleY: 1 / scale,
+        selectable: true,
+        evented: true,
+        hasControls: true,
+        _cadLayer: layer.id,
+        _cadType: 'pdf_background',
+      });
+      canvas.add(fabricImg);
+      // Place above grid lines but below regular drawing objects
+      canvas.moveTo(fabricImg, _gridLines.length);
+      offsetY += (offscreen.height / scale) + 40;
     }
 
     canvas.renderAll();
+    // Reset view so user can see the imported content
+    zoomExtents();
     saveUndoState();
     document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
     toast('PDF importováno jako podklad — kalibrujte přes Soubor › Kalibrovat měřítko');
