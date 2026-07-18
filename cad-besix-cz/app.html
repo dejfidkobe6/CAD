@@ -543,19 +543,105 @@ body {
 }
 .drawing-info strong { color: var(--text); font-weight: 600; }
 
-/* ─── RESPONSIVE ─── */
+/* ─── TOUCH & RESPONSIVE ─── */
+* { -webkit-tap-highlight-color: transparent; }
+#canvasWrap { touch-action: none; }
+.tool-btn { min-height: 44px; }
+
 @media (max-width: 900px) {
   :root { --panel-w: 180px; }
 }
+
+/* ── Mobile bottom toolbar ── */
+#mobileBar {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 56px;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border2);
+  z-index: 200;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  align-items: center;
+  gap: 1px;
+  padding: 0 6px;
+}
+#mobileBar::-webkit-scrollbar { display: none; }
+.mob-btn {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-width: 48px; height: 48px;
+  padding: 0 4px;
+  border: none; background: none;
+  color: var(--text2);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit; font-size: 9px; font-weight: 600; letter-spacing: .2px;
+  gap: 3px;
+  transition: background .12s, color .12s;
+  -webkit-user-select: none; user-select: none;
+}
+.mob-btn:active { background: var(--surface2); }
+.mob-btn.active { color: var(--accent); background: rgba(200,145,42,0.12); }
+.mob-btn svg { width: 20px; height: 20px; stroke-width: 1.5; flex-shrink: 0; }
+.mob-sep { flex: 0 0 1px; width: 1px; height: 28px; background: var(--border); margin: 0 3px; }
+
+/* Mobile panel toggle */
+#mobilePanelBtn {
+  display: none;
+  position: fixed;
+  right: 14px; bottom: 68px;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  cursor: pointer;
+  align-items: center; justify-content: center;
+  z-index: 210;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+}
+#mobilePanelBtn svg { width: 20px; height: 20px; stroke: var(--text); }
+#mobilePanelOverlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 299;
+}
+#mobilePanelOverlay.active { display: block; }
+
 @media (max-width: 700px) {
+  :root { --tabbar-h: 0px; }
   #cadApp {
-    grid-template-columns: var(--toolbar-w) 1fr;
-    grid-template-areas:
-      "topbar topbar"
-      "toolbar canvas"
-      "status status";
+    grid-template-rows: var(--topbar-h) 1fr;
+    grid-template-columns: 1fr;
+    grid-template-areas: "topbar" "canvas";
   }
-  #rightPanel { display: none; }
+  #tabBar, #toolbar, #statusBar { display: none !important; }
+  #mobileBar, #mobilePanelBtn { display: flex; }
+  #canvasWrap { padding-bottom: 56px; }
+
+  /* Slide-in right panel */
+  #rightPanel {
+    position: fixed !important;
+    top: var(--topbar-h); right: 0; bottom: 56px;
+    width: 240px;
+    z-index: 300;
+    transform: translateX(110%);
+    transition: transform .25s ease;
+    display: flex !important;
+    flex-direction: column;
+    overflow-y: auto;
+    border-left: 1px solid var(--border2);
+    box-shadow: -4px 0 24px rgba(0,0,0,.5);
+  }
+  #rightPanel.mobile-open { transform: translateX(0); }
+
+  /* Compact topbar on mobile */
+  .top-logo span { display: none; }
+  #topBar { gap: 2px; padding: 0 4px; }
+  .menu-item { font-size: 12px; padding: 0 8px; }
 }
 </style>
 </head>
@@ -769,6 +855,55 @@ body {
     <div class="status-item" id="statusTool">Výběr</div>
   </div>
 </div>
+
+<!-- MOBILE BOTTOM TOOLBAR -->
+<div id="mobileBar">
+  <button class="mob-btn active" data-tool="select" onclick="setTool('select')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 3l14 9-7 2-3 7z"/></svg>Výběr
+  </button>
+  <div class="mob-sep"></div>
+  <button class="mob-btn" data-tool="line" onclick="setTool('line')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="5" y1="19" x2="19" y2="5"/></svg>Čára
+  </button>
+  <button class="mob-btn" data-tool="rect" onclick="setTool('rect')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="1"/></svg>Rect
+  </button>
+  <button class="mob-btn" data-tool="circle" onclick="setTool('circle')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/></svg>Kruh
+  </button>
+  <button class="mob-btn" data-tool="polyline" onclick="setTool('polyline')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="4 18 8 8 14 14 20 4"/></svg>Poly
+  </button>
+  <button class="mob-btn" data-tool="wall" onclick="setTool('wall')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="6" width="18" height="4"/><rect x="3" y="14" width="18" height="4"/></svg>Stěna
+  </button>
+  <button class="mob-btn" data-tool="text" onclick="setTool('text')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 4h12M12 4v16M8 20h8"/></svg>Text
+  </button>
+  <button class="mob-btn" data-tool="dimension" onclick="setTool('dimension')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20V10M20 20V10M4 15h16M4 15l3-3M4 15l3 3M20 15l-3-3M20 15l-3 3"/></svg>Kóta
+  </button>
+  <div class="mob-sep"></div>
+  <button class="mob-btn" onclick="doUndo()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/></svg>Zpět
+  </button>
+  <button class="mob-btn" onclick="doRedo()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3L21 13"/></svg>Vpřed
+  </button>
+  <div class="mob-sep"></div>
+  <button class="mob-btn" onclick="zoomExtents()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>Zoom
+  </button>
+  <button class="mob-btn" onclick="deleteSelected()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>Smazat
+  </button>
+</div>
+
+<!-- MOBILE PANEL OVERLAY + TOGGLE -->
+<div id="mobilePanelOverlay" onclick="toggleMobilePanel(false)"></div>
+<button id="mobilePanelBtn" onclick="toggleMobilePanel()" title="Vlastnosti / vrstvy">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+</button>
 
 <!-- TITLE BLOCK MODAL -->
 <div class="modal-overlay" id="titleBlockModal">
@@ -1134,6 +1269,7 @@ function initCAD() {
 
   // Set initial date
   document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
+  initTouchHandlers();
 }
 
 // ── GRID ───────────────────────────────────────────────────────────────────
@@ -1288,6 +1424,9 @@ function setTool(tool) {
   };
   document.getElementById('statusTool').textContent = names[tool] || tool;
   wrap.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+  // Sync mobile bar highlight
+  document.querySelectorAll('#mobileBar .mob-btn[data-tool]').forEach(b =>
+    b.classList.toggle('active', b.dataset.tool === tool));
 }
 
 function getActiveLayer() {
@@ -2757,6 +2896,73 @@ function applyCmdCoords() {
   } else if (x !== null) {
     toast(`X=${Math.round(x)}`);
   }
+}
+
+// ── MOBILE ─────────────────────────────────────────────────────────────────
+function toggleMobilePanel(force) {
+  const panel = document.getElementById('rightPanel');
+  const overlay = document.getElementById('mobilePanelOverlay');
+  if (!panel) return;
+  const open = (force !== undefined) ? force : !panel.classList.contains('mobile-open');
+  panel.classList.toggle('mobile-open', open);
+  overlay.classList.toggle('active', open);
+}
+
+function initTouchHandlers() {
+  if (!canvas) return;
+  let isPinching = false;
+  let pinchData = null;
+  const el = canvas.wrapperEl;
+
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      isPinching = true;
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const rect = el.getBoundingClientRect();
+      const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
+      const midY = (t1.clientY + t2.clientY) / 2 - rect.top;
+      pinchData = {
+        startDist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
+        startZoom: canvas.getZoom(),
+        midX, midY,
+        lastMidX: midX, lastMidY: midY,
+      };
+    } else {
+      isPinching = false;
+    }
+  }, { passive: false });
+
+  el.addEventListener('touchmove', e => {
+    if (e.touches.length === 2 && isPinching && pinchData) {
+      e.preventDefault();
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const rect = el.getBoundingClientRect();
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
+      const midY = (t1.clientY + t2.clientY) / 2 - rect.top;
+
+      // Pinch zoom around initial midpoint
+      const newZoom = Math.min(Math.max(pinchData.startZoom * (dist / pinchData.startDist), 0.05), 20);
+      canvas.zoomToPoint({ x: pinchData.midX, y: pinchData.midY }, newZoom);
+
+      // 2-finger pan
+      const vpt = canvas.viewportTransform;
+      vpt[4] += midX - pinchData.lastMidX;
+      vpt[5] += midY - pinchData.lastMidY;
+      canvas.requestRenderAll();
+
+      pinchData.lastMidX = midX;
+      pinchData.lastMidY = midY;
+      CAD.zoom = newZoom;
+      const zl = document.getElementById('zoomLevel');
+      if (zl) zl.textContent = Math.round(newZoom * 100);
+    }
+  }, { passive: false });
+
+  el.addEventListener('touchend', e => {
+    if (e.touches.length < 2) { isPinching = false; pinchData = null; }
+  }, { passive: true });
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
