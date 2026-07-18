@@ -584,7 +584,7 @@ body {
   -webkit-user-select: none; user-select: none;
 }
 .mob-btn:active { background: var(--surface2); }
-.mob-btn.active { color: var(--accent); background: rgba(200,145,42,0.12); }
+.mob-btn.active { color: var(--accent); background: rgba(200,145,42,0.22); border-top: 2px solid var(--accent); }
 .mob-btn svg { width: 20px; height: 20px; stroke-width: 1.5; flex-shrink: 0; }
 .mob-sep { flex: 0 0 1px; width: 1px; height: 28px; background: var(--border); margin: 0 3px; }
 
@@ -1426,9 +1426,10 @@ function setTool(tool) {
   };
   document.getElementById('statusTool').textContent = names[tool] || tool;
   wrap.style.cursor = tool === 'select' ? 'default' : 'crosshair';
-  // Sync mobile bar highlight
-  document.querySelectorAll('#mobileBar .mob-btn[data-tool]').forEach(b =>
-    b.classList.toggle('active', b.dataset.tool === tool));
+  // Sync mobile bar highlight — explicit remove+add for reliability
+  document.querySelectorAll('#mobileBar .mob-btn').forEach(b => b.classList.remove('active'));
+  const mobBtn = document.querySelector(`#mobileBar .mob-btn[data-tool="${tool}"]`);
+  if (mobBtn) mobBtn.classList.add('active');
 }
 
 function getActiveLayer() {
@@ -2185,20 +2186,15 @@ function zoomOut() {
 function zoomExtents() {
   const objs = canvas.getObjects().filter(o => !o.excludeFromExport);
   if (!objs.length) {
-    canvas.setZoom(1);
     canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
     CAD.zoom = 1;
     document.getElementById('zoomLevel').textContent = '100';
-    canvas.renderAll();
     return;
   }
-  // Reset to identity first so getBoundingRect returns world coords
-  canvas.setZoom(1);
-  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   objs.forEach(o => {
-    o.setCoords();
-    const b = o.getBoundingRect();
+    // absolute=true,calculate=true → world-space rect, no viewport dependency
+    const b = o.getBoundingRect(true, true);
     minX = Math.min(minX, b.left);
     minY = Math.min(minY, b.top);
     maxX = Math.max(maxX, b.left + b.width);
@@ -2207,18 +2203,18 @@ function zoomExtents() {
   const contentW = maxX - minX;
   const contentH = maxY - minY;
   if (contentW < 1 || contentH < 1) return;
-  const pad = 40;
+  const pad = 50;
+  const cw = canvas.width  || 800;
+  const ch = canvas.height || 600;
   const z = Math.max(Math.min(
-    (canvas.width  - 2*pad) / contentW,
-    (canvas.height - 2*pad) / contentH,
+    (cw - 2*pad) / contentW,
+    (ch - 2*pad) / contentH,
     20
   ), 0.01);
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  canvas.setZoom(z);
-  const vpt = [...canvas.viewportTransform];
-  vpt[4] = canvas.width  / 2 - centerX * z;
-  vpt[5] = canvas.height / 2 - centerY * z;
+  const vpt = [z, 0, 0, z,
+    cw / 2 - ((minX + maxX) / 2) * z,
+    ch / 2 - ((minY + maxY) / 2) * z
+  ];
   canvas.setViewportTransform(vpt);
   CAD.zoom = z;
   document.getElementById('zoomLevel').textContent = Math.round(z * 100);
@@ -2400,7 +2396,7 @@ async function importPDFBackground(file) {
     zoomExtents();
     saveUndoState();
     document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
-    toast('PDF importováno jako podklad — kalibrujte přes Soubor › Kalibrovat měřítko');
+    toast(`PDF: ${pdf.numPages} stran importováno — zoom nastaven automaticky`);
   } catch (err) {
     console.error('PDF background import:', err);
     toast('Chyba importu PDF: ' + err.message);
@@ -2628,7 +2624,7 @@ function parseDXF(text) {
   canvas.renderAll();
   zoomExtents();
   saveUndoState();
-  toast(`Importováno ${entities.length} entit z DXF`);
+  toast(`DXF: ${entities.length} entit — pokud nic nevidíte, stiskněte tlačítko Zoom`);
 }
 
 // ── EXPORT PDF ─────────────────────────────────────────────────────────────
