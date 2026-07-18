@@ -1364,13 +1364,15 @@ function setupCanvasEvents() {
   });
   canvas.on('mouse:move', (opt) => {
     if (_isPanning && _panLast) {
-      const dx = opt.e.clientX - _panLast.x;
-      const dy = opt.e.clientY - _panLast.y;
+      const eX = opt.e.clientX ?? (opt.e.touches && opt.e.touches[0] ? opt.e.touches[0].clientX : _panLast.x);
+      const eY = opt.e.clientY ?? (opt.e.touches && opt.e.touches[0] ? opt.e.touches[0].clientY : _panLast.y);
+      const dx = eX - _panLast.x;
+      const dy = eY - _panLast.y;
       const vpt = canvas.viewportTransform;
       vpt[4] += dx;
       vpt[5] += dy;
       canvas.requestRenderAll();
-      _panLast = { x: opt.e.clientX, y: opt.e.clientY };
+      _panLast = { x: eX, y: eY };
       return;
     }
     // Update snap marker on hover even when not drawing
@@ -1587,7 +1589,8 @@ function getPointer(opt) {
 }
 
 function handleToolMouseDown(opt) {
-  if (opt.e.button !== 0) return;
+  // Allow touch events (button is undefined on TouchEvent)
+  if (opt.e.button != null && opt.e.button !== 0) return;
   const p = getPointer(opt);
   const layer = getActiveLayer();
 
@@ -2180,11 +2183,45 @@ function zoomOut() {
 }
 
 function zoomExtents() {
+  const objs = canvas.getObjects().filter(o => !o.excludeFromExport);
+  if (!objs.length) {
+    canvas.setZoom(1);
+    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    CAD.zoom = 1;
+    document.getElementById('zoomLevel').textContent = '100';
+    canvas.renderAll();
+    return;
+  }
+  // Reset to identity first so getBoundingRect returns world coords
   canvas.setZoom(1);
-  canvas.viewportTransform = [1, 0, 0, 1, 0, 0];
-  CAD.zoom = 1;
-  document.getElementById('zoomLevel').textContent = '100';
-  canvas.renderAll();
+  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  objs.forEach(o => {
+    o.setCoords();
+    const b = o.getBoundingRect();
+    minX = Math.min(minX, b.left);
+    minY = Math.min(minY, b.top);
+    maxX = Math.max(maxX, b.left + b.width);
+    maxY = Math.max(maxY, b.top + b.height);
+  });
+  const contentW = maxX - minX;
+  const contentH = maxY - minY;
+  if (contentW < 1 || contentH < 1) return;
+  const pad = 40;
+  const z = Math.max(Math.min(
+    (canvas.width  - 2*pad) / contentW,
+    (canvas.height - 2*pad) / contentH,
+    20
+  ), 0.01);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  canvas.setZoom(z);
+  const vpt = [...canvas.viewportTransform];
+  vpt[4] = canvas.width  / 2 - centerX * z;
+  vpt[5] = canvas.height / 2 - centerY * z;
+  canvas.setViewportTransform(vpt);
+  CAD.zoom = z;
+  document.getElementById('zoomLevel').textContent = Math.round(z * 100);
 }
 
 // ── TOGGLES ────────────────────────────────────────────────────────────────
@@ -2589,6 +2626,7 @@ function parseDXF(text) {
   });
 
   canvas.renderAll();
+  zoomExtents();
   saveUndoState();
   toast(`Importováno ${entities.length} entit z DXF`);
 }
