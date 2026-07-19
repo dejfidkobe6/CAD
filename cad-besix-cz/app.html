@@ -1167,6 +1167,9 @@ body {
 <!-- TOAST -->
 <div id="toast"></div>
 
+<!-- DEBUG OVERLAY — permanent, remove after diagnosis -->
+<div id="dbg" style="position:fixed;top:48px;left:0;right:0;background:rgba(180,0,0,0.88);color:#fff;z-index:99990;font-size:11px;font-family:monospace;padding:2px 6px;pointer-events:none;white-space:pre;"></div>
+
 <!-- AUTH GATE — skryje se po úspěšném přihlášení -->
 <div id="authGate" style="position:fixed;inset:0;z-index:99999;background:#0d1117;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
   <img src="/besix_logo_highres_transparent.png" style="height:48px;filter:brightness(1.1)">
@@ -1422,6 +1425,8 @@ function initCAD() {
       fireRightClick: true,
       stopContextMenu: true,
     });
+    const _dbg = document.getElementById('dbg');
+    if (_dbg) _dbg.textContent = 'INIT: ' + w + '×' + h + ' DPR=' + (window.devicePixelRatio||1).toFixed(1) + ' tap canvas to test';
     toast('CAD init: ' + w + '×' + h + ' DPR=' + (window.devicePixelRatio||1).toFixed(1));
 
     // ResizeObserver keeps canvas sized to wrapper as layout changes
@@ -2071,9 +2076,46 @@ function handleToolMouseUp(opt) {
   const p = getPointer(opt);
 
   switch (_activeTool) {
+    case 'line':
+      if (_tempShape) {
+        const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        // Only finalize on mouseup (not touch — touch uses two-tap paradigm)
+        if (opt.e.type === 'mouseup' && len > 2) {
+          _tempShape.set({ x2: p.x, y2: p.y });
+          hidePolarTrack();
+          saveUndoState();
+          canvas.renderAll();
+          _tempShape = null;
+          _isDrawing = false;
+          _drawStart = null;
+        } else if (opt.e.type !== 'mouseup') {
+          // Touch touchend: finalize if user dragged (len > 10px), else keep for second tap
+          if (len > 10) {
+            _tempShape.set({ x2: p.x, y2: p.y });
+            hidePolarTrack();
+            saveUndoState();
+            canvas.renderAll();
+            _tempShape = null;
+            _isDrawing = false;
+            _drawStart = null;
+          }
+        }
+      }
+      break;
     case 'rect':
     case 'circle':
       if (_tempShape) {
+        // If user just tapped (no drag), create a default-sized shape
+        const rW = _tempShape.width  || 0;
+        const rH = _tempShape.height || (_tempShape.radius ? _tempShape.radius * 2 : 0);
+        if (rW < 5 && rH < 5) {
+          if (_activeTool === 'rect') {
+            _tempShape.set({ width: 100, height: 60 });
+          } else {
+            _tempShape.set({ radius: 50 });
+          }
+        }
         saveUndoState();
         canvas.renderAll();
       }
@@ -3777,6 +3819,8 @@ function initTouchHandlers() {
 
   wrap.addEventListener('touchstart', function(e) {
     ensureCanvasSized();
+    const _d = document.getElementById('dbg');
+    if (_d) _d.textContent = 'TOUCH: tool=' + _activeTool + ' canvas=' + canvas.width + '×' + canvas.height + ' fingers=' + e.touches.length;
     toast('Touch: ' + _activeTool + ' ' + canvas.width + '×' + canvas.height);
 
     if (e.touches.length === 2) {
@@ -3883,6 +3927,10 @@ function initTouchHandlers() {
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
+window.addEventListener('error', function(ev) {
+  const d = document.getElementById('dbg');
+  if (d) d.textContent = 'JS ERROR: ' + ev.message + ' @line ' + ev.lineno;
+});
 bootAuth();
 </script>
 </body>
