@@ -334,6 +334,20 @@ body {
   top: 50%; left: 50%;
 }
 
+/* Hatch pattern picker */
+#hatchPatternGrid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 4px 0;
+}
+.hatch-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  cursor: pointer; padding: 4px; border-radius: 6px;
+  border: 1.5px solid transparent; color: var(--text2);
+  font-size: 9px; text-align: center; transition: border-color .12s, background .12s;
+}
+.hatch-btn:hover { background: var(--surface2); border-color: var(--border); }
+.hatch-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(200,145,42,.12); }
+.hatch-btn svg { width: 36px; height: 36px; }
+
 /* Snap indicator */
 @keyframes snap-pulse {
   0%   { box-shadow: 0 0 0 0 rgba(255,238,68,0.7), 0 0 0 3px rgba(0,0,0,0.5); }
@@ -922,6 +936,14 @@ body {
       </div>
     </div>
 
+    <!-- Hatching / Šrafování -->
+    <div class="panel-section" id="hatchSection">
+      <div class="panel-header" onclick="togglePanel('hatchBody')">Šrafování <span>▾</span></div>
+      <div class="panel-body collapsed" id="hatchBody">
+        <div id="hatchPatternGrid"></div>
+      </div>
+    </div>
+
     <!-- Layers -->
     <div class="panel-section" id="layersSection" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
       <div class="panel-header" onclick="togglePanel('layersBody')">
@@ -1072,6 +1094,9 @@ body {
   </button>
   <button class="mob-btn" data-tool="dimension" onclick="setTool('dimension')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20V10M20 20V10M4 15h16M4 15l3-3M4 15l3 3M20 15l-3-3M20 15l-3 3"/></svg>Kóta
+  </button>
+  <button class="mob-btn" data-tool="hatch" onclick="setTool('hatch')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="1"/><line x1="3" y1="21" x2="21" y2="3"/><line x1="3" y1="15" x2="15" y2="3"/><line x1="9" y1="21" x2="21" y2="9"/><line x1="3" y1="9" x2="9" y2="3"/><line x1="15" y1="21" x2="21" y2="15"/></svg>Šrafa
   </button>
   <div class="mob-sep"></div>
   <button class="mob-btn" onclick="doUndo()">
@@ -1339,6 +1364,9 @@ let _isDrawing = false;
 let _drawStart = null;
 let _tempShape = null;
 let _polyPoints = [];
+let _dimP2    = null; // dimension: second measurement point (after click 2)
+let _dimOffset = 0;  // dimension: signed perpendicular offset (set during mouse move after click 2)
+let _hatchHover = null; // hatch: object currently highlighted for live preview
 
 const CAD = {
   scale: '1:100',
@@ -1366,6 +1394,7 @@ const CAD = {
   },
   undoStack: [],
   redoStack: [],
+  hatchType: 'diagonal',
 };
 
 let canvas; // Fabric.js instance
@@ -1508,6 +1537,7 @@ function initCAD() {
     };
 
     renderLayers();
+    initHatchPanel();
     setupCanvasEvents();
     setupKeyboard();
     // Try server first (cross-device sync), fall back to local IndexedDB
@@ -1684,6 +1714,8 @@ function setTool(tool) {
   _drawStart = null;
   if (_tempShape) { canvas.remove(_tempShape); _tempShape = null; }
   _polyPoints = [];
+  _dimP2 = null; _dimOffset = 0;
+  if (_hatchHover) { _hatchHover.set({ opacity: 1 }); _hatchHover = null; }
   hidePolarTrack();
   // Show/hide cursor dot based on tool
   const cd = document.getElementById('cursorDot');
@@ -1699,6 +1731,7 @@ function setTool(tool) {
   const names = {
     select: 'Výběr', line: 'Čára', rect: 'Obdélník', circle: 'Kružnice',
     polyline: 'Polyline', text: 'Text', dimension: 'Kóta', wall: 'Stěna',
+    hatch: 'Šrafování',
     move: 'Přesun', copy: 'Kopie', rotate: 'Rotace', mirror: 'Zrcadlo',
     trim: 'Trim', offset: 'Offset', calibrate: 'Kalibrace měřítka'
   };
@@ -1709,7 +1742,7 @@ function setTool(tool) {
   const mobBtn = document.querySelector(`#mobileBar .mob-btn[data-tool="${tool}"]`);
   if (mobBtn) mobBtn.classList.add('active');
   // Show/hide drawing HUD
-  const drawingTools = ['line','rect','circle','polyline','wall','dimension'];
+  const drawingTools = ['line','rect','circle','polyline','wall','dimension','hatch'];
   const hud = document.getElementById('drawHUD');
   hud.classList.toggle('visible', drawingTools.includes(tool));
   const hasLenAng = ['line','wall','dimension'].includes(tool);
@@ -1963,8 +1996,10 @@ function getPointer(opt) {
     if (dx > dy) p.y = _drawStart.y;
     else p.x = _drawStart.x;
     hidePolarTrack();
-  } else if (_isDrawing && _drawStart && ['line','wall','dimension'].includes(_activeTool)) {
-    // Polar tracking: snap to 45° multiples
+  } else if (_isDrawing && _drawStart && ['line','wall'].includes(_activeTool)) {
+    p = applyPolarSnap(p, _drawStart);
+  } else if (_isDrawing && _drawStart && _activeTool === 'dimension' && !_dimP2) {
+    // Polar tracking only for dimension phase 1 (first → second point)
     p = applyPolarSnap(p, _drawStart);
   } else {
     hidePolarTrack();
@@ -1998,6 +2033,7 @@ function handleToolMouseDown(opt) {
         canvas.add(_tempShape);
       } else {
         _tempShape.set({ x2: p.x, y2: p.y });
+        _tempShape.setCoords();
         hidePolarTrack();
         saveUndoState();
         canvas.renderAll();
@@ -2020,9 +2056,8 @@ function handleToolMouseDown(opt) {
         const rW = Math.abs(p.x - _drawStart.x);
         const rH = Math.abs(p.y - _drawStart.y);
         _tempShape.set({ left: Math.min(p.x, _drawStart.x), top: Math.min(p.y, _drawStart.y), width: rW, height: rH });
-        hidePolarTrack();
-        saveUndoState();
-        canvas.renderAll();
+        _tempShape.setCoords();
+        hidePolarTrack(); saveUndoState(); canvas.renderAll();
         _tempShape = null; _isDrawing = false; _drawStart = null;
       }
       break;
@@ -2039,9 +2074,8 @@ function handleToolMouseDown(opt) {
       } else {
         const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
         _tempShape.set({ radius: Math.sqrt(dx * dx + dy * dy) });
-        hidePolarTrack();
-        saveUndoState();
-        canvas.renderAll();
+        _tempShape.setCoords();
+        hidePolarTrack(); saveUndoState(); canvas.renderAll();
         _tempShape = null; _isDrawing = false; _drawStart = null;
       }
       break;
@@ -2070,14 +2104,76 @@ function handleToolMouseDown(opt) {
 
     case 'dimension':
       if (!_isDrawing) {
-        _isDrawing = true;
-        _drawStart = p;
+        // Click 1: first measurement point
+        _isDrawing = true; _drawStart = p;
+        _tempShape = new fabric.Line([p.x, p.y, p.x, p.y], {
+          stroke: layer.color, strokeWidth: 0.8, strokeDashArray: [4,3],
+          selectable: false, evented: false,
+        });
+        canvas.add(_tempShape);
+      } else if (!_dimP2) {
+        // Click 2: second measurement point — enter offset-preview mode
+        _dimP2 = p;
+        canvas.remove(_tempShape); _tempShape = null;
+        _dimOffset = 30; // default offset
+        _tempShape = _buildDimGroup(_drawStart, _dimP2, _dimOffset, layer, true);
+        if (_tempShape) canvas.add(_tempShape);
+        canvas.renderAll();
       } else {
-        addDimension(_drawStart, p, layer);
-        _isDrawing = false;
-        _drawStart = null;
+        // Click 3: place dimension at current offset
+        canvas.remove(_tempShape); _tempShape = null;
+        addDimension(_drawStart, _dimP2, _dimOffset, layer);
+        _isDrawing = false; _drawStart = null; _dimP2 = null; _dimOffset = 0;
       }
       break;
+
+    case 'hatch': {
+      // Find topmost fillable object under cursor
+      const vpt = canvas.viewportTransform;
+      const zoom = vpt[0];
+      const screenX = p.x * zoom + vpt[4];
+      const screenY = p.y * zoom + vpt[5];
+      const target = canvas.getObjects().slice().reverse().find(o => {
+        if (o.excludeFromExport || o === _tempShape) return false;
+        const b = o.getBoundingRect(false, true);
+        return screenX >= b.left && screenX <= b.left+b.width && screenY >= b.top && screenY <= b.top+b.height;
+      });
+      if (target && ['rect','circle','polyline','path','group'].includes(target.type)) {
+        // Fill existing shape with hatch pattern
+        target.set({ fill: makeHatchPattern(CAD.hatchType, layer.color) });
+        canvas.renderAll();
+        saveUndoState();
+        _hatchHover = null;
+      } else if (!_isDrawing) {
+        // Start a hatch-filled rectangle
+        _isDrawing = true; _drawStart = p;
+        _tempShape = new fabric.Rect({
+          left: p.x, top: p.y, width: 0, height: 0,
+          fill: 'transparent', stroke: layer.color, strokeWidth: 0.5,
+          strokeDashArray: [4,3], selectable: false, evented: false,
+        });
+        canvas.add(_tempShape);
+      } else {
+        // Finalize hatch rect
+        const rW = Math.abs(p.x - _drawStart.x), rH = Math.abs(p.y - _drawStart.y);
+        canvas.remove(_tempShape); _tempShape = null;
+        if (rW > 2 && rH > 2) {
+          const hRect = new fabric.Rect({
+            left: Math.min(p.x, _drawStart.x), top: Math.min(p.y, _drawStart.y),
+            width: rW, height: rH,
+            fill: makeHatchPattern(CAD.hatchType, layer.color),
+            stroke: layer.color, strokeWidth: 0.5,
+            selectable: false, evented: false,
+            _cadLayer: layer.id, _cadType: 'hatch',
+          });
+          canvas.add(hRect);
+          saveUndoState();
+          canvas.renderAll();
+        }
+        _isDrawing = false; _drawStart = null;
+      }
+      break;
+    }
 
     case 'wall':
       if (!_isDrawing) {
@@ -2099,6 +2195,7 @@ function handleToolMouseDown(opt) {
         const len = Math.sqrt(dx * dx + dy * dy);
         const angle = Math.atan2(dy, dx) * 180 / Math.PI;
         _tempShape.set({ width: len, angle: angle });
+        _tempShape.setCoords();
         canvas.renderAll();
         saveUndoState();
         _tempShape = null;
@@ -2111,6 +2208,41 @@ function handleToolMouseDown(opt) {
 
 function handleToolMouseMove(opt) {
   const p = getPointer(opt);
+
+  // Dimension phase 2: offset preview — doesn't need _isDrawing+_tempShape guard
+  if (_activeTool === 'dimension' && _dimP2) {
+    const layer = getActiveLayer();
+    const dx = _dimP2.x - _drawStart.x, dy = _dimP2.y - _drawStart.y;
+    const angle = Math.atan2(dy, dx);
+    const perpX = -Math.sin(angle), perpY = Math.cos(angle);
+    const tc = { x: p.x - _drawStart.x, y: p.y - _drawStart.y };
+    _dimOffset = tc.x * perpX + tc.y * perpY;
+    if (_tempShape) { canvas.remove(_tempShape); _tempShape = null; }
+    _tempShape = _buildDimGroup(_drawStart, _dimP2, _dimOffset, layer, true);
+    if (_tempShape) { canvas.add(_tempShape); canvas.renderAll(); }
+    return;
+  }
+
+  // Hatch live preview: highlight shape under cursor
+  if (_activeTool === 'hatch' && !_isDrawing) {
+    const vpt = canvas.viewportTransform;
+    const zoom = vpt[0];
+    const screenX = p.x * zoom + vpt[4], screenY = p.y * zoom + vpt[5];
+    const newHover = canvas.getObjects().slice().reverse().find(o => {
+      if (o.excludeFromExport || o === _tempShape) return false;
+      if (!['rect','circle','polyline','path','group'].includes(o.type)) return false;
+      const b = o.getBoundingRect(false, true);
+      return screenX >= b.left && screenX <= b.left+b.width && screenY >= b.top && screenY <= b.top+b.height;
+    });
+    if (newHover !== _hatchHover) {
+      if (_hatchHover) { _hatchHover.set({ opacity: 1 }); }
+      _hatchHover = newHover || null;
+      if (_hatchHover) { _hatchHover.set({ opacity: 0.6 }); }
+      canvas.renderAll();
+    }
+    return;
+  }
+
   if (!_isDrawing || !_tempShape) return;
 
   switch (_activeTool) {
@@ -2174,52 +2306,179 @@ function handleToolMouseUp(opt) {
 }
 
 // ── DIMENSION TOOL ─────────────────────────────────────────────────────────
-function addDimension(p1, p2, layer) {
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-  const offset = 20;
+// Builds a Fabric.js Group representing a standard Czech/EU construction
+// dimension: tick marks at 45° (NOT arrows), text parallel to line, above it.
+function _buildDimGroup(p1, p2, off, layer, preview) {
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  if (len < 0.5) return null;
   const angle = Math.atan2(dy, dx);
-  const perpX = -Math.sin(angle) * offset;
-  const perpY = Math.cos(angle) * offset;
-
-  const group = new fabric.Group([
-    // Main line
-    new fabric.Line([p1.x, p1.y + perpY, p2.x, p2.y + perpY], {
-      stroke: layer.color, strokeWidth: 0.8,
-    }),
-    // Extension lines
-    new fabric.Line([p1.x, p1.y, p1.x, p1.y + perpY + 5], {
-      stroke: layer.color, strokeWidth: 0.5,
-    }),
-    new fabric.Line([p2.x, p2.y, p2.x, p2.y + perpY + 5], {
-      stroke: layer.color, strokeWidth: 0.5,
-    }),
-    // Arrows
-    new fabric.Triangle({
-      left: p1.x + perpX, top: p1.y + perpY,
-      width: 6, height: 10, fill: layer.color,
-      angle: angle * 180 / Math.PI + 90, originX: 'center', originY: 'center',
-    }),
-    new fabric.Triangle({
-      left: p2.x + perpX, top: p2.y + perpY,
-      width: 6, height: 10, fill: layer.color,
-      angle: angle * 180 / Math.PI - 90, originX: 'center', originY: 'center',
-    }),
-    // Text
+  const perpX = -Math.sin(angle), perpY = Math.cos(angle);
+  const d1 = { x: p1.x + perpX*off, y: p1.y + perpY*off };
+  const d2 = { x: p2.x + perpX*off, y: p2.y + perpY*off };
+  const mid = { x: (d1.x+d2.x)/2, y: (d1.y+d2.y)/2 };
+  // Text sits 7 units to the "above" side of the dimension line
+  const textOffX = perpX * 7, textOffY = perpY * 7;
+  // 45° tick marks centred on each end of the dimension line
+  const tk = 7; // tick half-length in canvas units
+  const ta = angle + Math.PI * 0.75; // 135° → visually 45° relative to dim line
+  const tx = Math.cos(ta)*tk, ty = Math.sin(ta)*tk;
+  // Text angle: keep readable (never upside-down)
+  let textAngle = ((angle * 180 / Math.PI) % 360 + 360) % 360;
+  if (textAngle > 90 && textAngle <= 270) textAngle = (textAngle + 180) % 360;
+  const c = layer.color;
+  const grp = new fabric.Group([
+    new fabric.Line([d1.x, d1.y, d2.x, d2.y],                 { stroke: c, strokeWidth: 0.8 }),
+    new fabric.Line([p1.x, p1.y, d1.x+perpX*4, d1.y+perpY*4], { stroke: c, strokeWidth: 0.5 }),
+    new fabric.Line([p2.x, p2.y, d2.x+perpX*4, d2.y+perpY*4], { stroke: c, strokeWidth: 0.5 }),
+    new fabric.Line([d1.x-tx, d1.y-ty, d1.x+tx, d1.y+ty],    { stroke: c, strokeWidth: 1.5 }),
+    new fabric.Line([d2.x-tx, d2.y-ty, d2.x+tx, d2.y+ty],    { stroke: c, strokeWidth: 1.5 }),
     new fabric.Text(Math.round(len).toString(), {
-      left: mid.x, top: mid.y + perpY - 14,
-      fontSize: 11, fill: layer.color,
-      fontFamily: 'JetBrains Mono',
-      originX: 'center',
+      left: mid.x + textOffX, top: mid.y + textOffY,
+      fontSize: 10, fill: c, fontFamily: 'JetBrains Mono',
+      originX: 'center', originY: 'center', angle: textAngle,
     }),
-  ], {
-    _cadLayer: layer.id, _cadType: 'dimension',
-  });
+  ], { selectable: false, evented: false, opacity: preview ? 0.65 : 1 });
+  return grp;
+}
 
-  canvas.add(group);
+function addDimension(p1, p2, off, layer) {
+  const grp = _buildDimGroup(p1, p2, off, layer, false);
+  if (!grp) return;
+  grp._cadLayer = layer.id;
+  grp._cadType  = 'dimension';
+  canvas.add(grp);
   saveUndoState();
+  canvas.renderAll();
+}
+
+// ── HATCH PATTERNS ──────────────────────────────────────────────────────────
+const HATCH_DEFS = {
+  diagonal:   { name: 'Šrafování',   size: 10 },
+  crosshatch: { name: 'Křížová',     size: 10 },
+  brick:      { name: 'Zdivo',       size: 20 },
+  concrete:   { name: 'Beton',       size: 16 },
+  insulation: { name: 'Izolace',     size: 20 },
+  sand:       { name: 'Písek',       size: 12 },
+};
+
+function makeHatchPattern(type, color) {
+  const def = HATCH_DEFS[type] || HATCH_DEFS.diagonal;
+  const s = def.size;
+  const pc = document.createElement('canvas');
+  pc.width = pc.height = s;
+  const ctx = pc.getContext('2d');
+  ctx.strokeStyle = color || '#888';
+  ctx.fillStyle   = color || '#888';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  switch (type) {
+    case 'diagonal':
+      ctx.moveTo(-1, s+1); ctx.lineTo(s+1, -1);
+      ctx.moveTo(-1, 1);   ctx.lineTo(1,   -1);
+      ctx.moveTo(s-1, s+1);ctx.lineTo(s+1, s-1);
+      break;
+    case 'crosshatch':
+      ctx.moveTo(-1, s+1); ctx.lineTo(s+1, -1);
+      ctx.moveTo(-1, -1);  ctx.lineTo(s+1, s+1);
+      break;
+    case 'brick':
+      // Horizontal mortar at mid and bottom; vertical joints alternate
+      ctx.moveTo(0, 0);   ctx.lineTo(s, 0);
+      ctx.moveTo(0, s/2); ctx.lineTo(s, s/2);
+      ctx.moveTo(s/2, 0); ctx.lineTo(s/2, s/2);
+      ctx.moveTo(0, s/2); ctx.lineTo(0,   s);
+      ctx.moveTo(s, s/2); ctx.lineTo(s,   s);
+      break;
+    case 'concrete': {
+      // Diagonal lines + small triangles (gravel)
+      ctx.moveTo(-1, s+1); ctx.lineTo(s+1, -1);
+      ctx.stroke(); ctx.beginPath();
+      const ts = s * 0.3;
+      ctx.moveTo(s*0.2, s*0.6); ctx.lineTo(s*0.2+ts, s*0.6); ctx.lineTo(s*0.2+ts/2, s*0.6-ts*0.8); ctx.closePath();
+      ctx.fill(); ctx.beginPath();
+      ctx.moveTo(s*0.65, s*0.2); ctx.lineTo(s*0.65+ts, s*0.2); ctx.lineTo(s*0.65+ts/2, s*0.2-ts*0.8); ctx.closePath();
+      ctx.fill(); ctx.beginPath();
+      break;
+    }
+    case 'insulation': {
+      // Zigzag wave
+      const h4 = s / 4;
+      ctx.moveTo(0,   s/2);
+      ctx.lineTo(h4,  s*0.1);
+      ctx.lineTo(h4*2,s/2);
+      ctx.lineTo(h4*3,s*0.9);
+      ctx.lineTo(h4*4,s/2);
+      break;
+    }
+    case 'sand': {
+      // Scattered dots
+      [[0.2,0.25],[0.7,0.3],[0.5,0.7],[0.15,0.75],[0.8,0.8]].forEach(([rx,ry]) => {
+        ctx.moveTo(rx*s+1, ry*s); ctx.arc(rx*s, ry*s, 1.2, 0, Math.PI*2);
+      });
+      ctx.fill(); ctx.beginPath();
+      break;
+    }
+  }
+  ctx.stroke();
+  return new fabric.Pattern({ source: pc, repeat: 'repeat' });
+}
+
+function initHatchPanel() {
+  const grid = document.getElementById('hatchPatternGrid');
+  if (!grid) return;
+  grid.innerHTML = Object.entries(HATCH_DEFS).map(([key, def]) => {
+    const preview = generateHatchPreviewSVG(key);
+    return `<div class="hatch-btn${CAD.hatchType===key?' active':''}" onclick="selectHatch('${key}')" title="${def.name}">
+      ${preview}
+      <span>${def.name}</span>
+    </div>`;
+  }).join('');
+}
+
+function generateHatchPreviewSVG(type) {
+  // Returns inline SVG thumbnail of hatch pattern
+  const size = 36;
+  let lines = '';
+  switch (type) {
+    case 'diagonal':
+      for (let i = -size; i < size*2; i += 8) lines += `<line x1="${i}" y1="0" x2="${i+size}" y2="${size}"/>`;
+      break;
+    case 'crosshatch':
+      for (let i = -size; i < size*2; i += 8) { lines += `<line x1="${i}" y1="0" x2="${i+size}" y2="${size}"/><line x1="${i+size}" y1="0" x2="${i}" y2="${size}"/>`; }
+      break;
+    case 'brick':
+      for (let r = 0; r < 4; r++) {
+        lines += `<line x1="0" y1="${r*10}" x2="${size}" y2="${r*10}"/>`;
+        const offX = r % 2 === 0 ? 0 : 9;
+        for (let c = offX; c < size; c += 18) lines += `<line x1="${c}" y1="${r*10}" x2="${c}" y2="${r*10+10}"/>`;
+      }
+      break;
+    case 'concrete':
+      for (let i = -size; i < size*2; i += 10) lines += `<line x1="${i}" y1="0" x2="${i+size}" y2="${size}"/>`;
+      lines += `<polygon points="6,28 12,28 9,22"/><polygon points="22,10 28,10 25,4"/>`;
+      break;
+    case 'insulation':
+      lines = `<polyline points="0,18 5,4 10,18 15,32 20,18 25,4 30,18 35,32"/>`;
+      break;
+    case 'sand':
+      [[6,9],[18,6],[28,14],[10,26],[24,28],[14,18]].forEach(([x,y]) => { lines += `<circle cx="${x}" cy="${y}" r="2"/>`; });
+      break;
+  }
+  return `<svg viewBox="0 0 36 36" width="36" height="36" xmlns="http://www.w3.org/2000/svg"
+    style="display:block;border:1px solid rgba(255,255,255,.12);border-radius:3px;background:rgba(0,0,0,.25)">
+    <g stroke="currentColor" stroke-width="0.8" fill="currentColor" clip-path="url(#h)">
+      <clipPath id="h"><rect width="36" height="36"/></clipPath>
+      ${lines}
+    </g></svg>`;
+}
+
+function selectHatch(type) {
+  CAD.hatchType = type;
+  document.querySelectorAll('.hatch-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.hatch-btn[onclick*="'${type}'"]`);
+  if (btn) btn.classList.add('active');
+  if (_activeTool !== 'hatch') setTool('hatch');
 }
 
 // ── POLYLINE FINISH ────────────────────────────────────────────────────────
@@ -2618,8 +2877,20 @@ function updateProps() {
   `;
   if (obj.width  !== undefined) html += `<div class="prop-row"><label>Šířka</label><input type="number" value="${Math.round(obj.width  * (obj.scaleX || 1))}" onchange="setProp('width',+this.value)"></div>`;
   if (obj.height !== undefined) html += `<div class="prop-row"><label>Výška</label><input type="number" value="${Math.round(obj.height * (obj.scaleY || 1))}" onchange="setProp('height',+this.value)"></div>`;
-  if (obj.angle  !== undefined) html += `<div class="prop-row"><label>Úhel</label><input type="number" value="${Math.round(obj.angle)}" onchange="setProp('angle',+this.value)"></div>`;
+  if (obj.angle  !== undefined) html += `<div class="prop-row"><label>Úhel °</label><input type="number" value="${Math.round(obj.angle)}" onchange="setProp('angle',+this.value)"></div>`;
   html += `<div class="prop-row"><label>Barva</label><input type="color" value="${obj.stroke || obj.fill || '#ffffff'}" onchange="setPropColor(this.value)"></div>`;
+  // Transform operations
+  html += `<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">
+    <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;">Transformace</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+      <button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;" onclick="selRotate90()">⟳ 90°</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;" onclick="selMirrorH()">↔ H</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;" onclick="selMirrorV()">↕ V</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;" onclick="selDuplicate()">Kopie</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;" onclick="selScalePrompt()">Měřítko</button>
+      <button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;color:var(--danger);" onclick="selDelete()">Smazat</button>
+    </div>
+  </div>`;
   el.innerHTML = html;
 
   // ── HUD panel (only in select mode) ──
