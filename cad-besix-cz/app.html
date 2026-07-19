@@ -639,6 +639,24 @@ body {
 .hud-sw-label { color: var(--text2); font-size: 9px; font-weight: 700; letter-spacing: .05em; }
 #hudSwVal { margin-left: auto; font-size: 10px; color: var(--accent); font-family: 'JetBrains Mono', monospace; }
 
+/* HUD action buttons (shown in selection mode) */
+.hud-acts { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0; }
+.hud-act-btn {
+  flex: 1 1 calc(50% - 2px); min-width: 0;
+  background: rgba(255,255,255,0.07); border: 1px solid var(--border);
+  color: var(--text); font-size: 10px; font-weight: 600;
+  padding: 5px 4px; border-radius: 5px; cursor: pointer;
+  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  -webkit-tap-highlight-color: transparent;
+}
+.hud-act-btn:active { background: var(--accent); color: #000; }
+.hud-act-btn.danger { border-color: var(--danger); color: var(--danger); }
+.hud-act-btn.danger:active { background: var(--danger); color: #fff; }
+
+/* HUD select mode label */
+#hudSelLabel { font-size: 9px; font-weight: 700; letter-spacing: .08em;
+  color: var(--accent); text-transform: uppercase; padding: 2px 0 4px; text-align: center; }
+
 /* ── Mobile bottom toolbar ── */
 #mobileBar {
   display: none;
@@ -972,6 +990,15 @@ body {
     <span class="hud-label">t</span>
     <input id="hudThk" class="hud-input" type="number" step="1" min="1" placeholder="tloušťka" title="Tloušťka zdi (Enter = zafixovat)">
   </div>
+  <!-- Rect A/B dimensions (visible when drawing rect OR rect is selected) -->
+  <div class="hud-row" id="hudARow" style="display:none">
+    <span class="hud-label">A</span>
+    <input id="hudA" class="hud-input" type="number" step="1" min="1" placeholder="šířka" title="Šířka A">
+  </div>
+  <div class="hud-row" id="hudBRow" style="display:none">
+    <span class="hud-label">B</span>
+    <input id="hudB" class="hud-input" type="number" step="1" min="1" placeholder="výška" title="Výška B">
+  </div>
   <div class="hud-sep"></div>
   <div class="hud-row" id="hudSwRow">
     <div class="hud-sw-preview"><span id="hudSwLine"></span></div>
@@ -979,6 +1006,19 @@ body {
     <div class="hud-sw-footer">
       <span class="hud-sw-label">TLOUŠŤKA ČÁRY</span>
       <span id="hudSwVal">1.5</span>
+    </div>
+  </div>
+  <!-- Selection action buttons (shown when shape is selected) -->
+  <div id="hudActRow" style="display:none">
+    <div class="hud-sep"></div>
+    <div id="hudSelLabel">Operace</div>
+    <div class="hud-acts">
+      <button class="hud-act-btn" onclick="selDuplicate()">Kopie</button>
+      <button class="hud-act-btn" onclick="selMirrorH()">Zrcadlo ↔</button>
+      <button class="hud-act-btn" onclick="selMirrorV()">Zrcadlo ↕</button>
+      <button class="hud-act-btn" onclick="selRotate90()">Rotace 90°</button>
+      <button class="hud-act-btn" onclick="selScalePrompt()">Měřítko</button>
+      <button class="hud-act-btn danger" onclick="selDelete()">Smazat</button>
     </div>
   </div>
 </div>
@@ -1079,7 +1119,7 @@ body {
           <input type="radio" name="pdfMode" value="background" checked style="margin-top:2px;accent-color:var(--accent)">
           <div>
             <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Podklad (rastr)</div>
-            <div style="font-size:12px;color:var(--text2);">PDF se vykreslí jako obrázek pod výkresem. Ideální pro situační plány, katastrální mapy a podklady pro překreslení.</div>
+            <div style="font-size:12px;color:var(--text2);">PDF se vykreslí jako obrázek pod výkresem. Ideální pro situační plány a katastrální mapy. <strong style="color:var(--accent)">Snap na čáry obrázku nefunguje</strong> — překreslete ručně.</div>
           </div>
         </label>
         <label id="pdfOptVec" onclick="selectPdfMode('vector')"
@@ -1087,7 +1127,7 @@ body {
           <input type="radio" name="pdfMode" value="vector" style="margin-top:2px;accent-color:var(--accent)">
           <div>
             <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Vektory (čáry, plochy, text)</div>
-            <div style="font-size:12px;color:var(--text2);">PDF se převede na editovatelné objekty. Nejlépe funguje pro vektorové CAD výkresy uložené jako PDF.</div>
+            <div style="font-size:12px;color:var(--text2);">PDF se převede na editovatelné objekty. <strong style="color:var(--accent)">Snap funguje</strong> — ideální pro CAD výkresy uložené jako PDF.</div>
           </div>
         </label>
       </div>
@@ -1350,90 +1390,108 @@ async function logout() {
 
 // ── INIT CAD ───────────────────────────────────────────────────────────────
 function initCAD() {
-  const wrap = document.getElementById('canvasWrap');
-  const w = wrap.clientWidth;
-  const h = wrap.clientHeight;
+  // Defer to next animation frame so CSS grid layout has finished computing
+  // dimensions. On mobile, wrap.clientWidth/Height is 0 if read synchronously.
+  requestAnimationFrame(() => {
+    const wrap = document.getElementById('canvasWrap');
+    let w = wrap.clientWidth;
+    let h = wrap.clientHeight;
+    // Final fallback: use window dimensions minus approximate chrome
+    if (!w) w = window.innerWidth;
+    if (!h) h = Math.max(300, window.innerHeight - Math.round(wrap.getBoundingClientRect().top || 160));
 
-  canvas = new fabric.Canvas('cadCanvas', {
-    width: w,
-    height: h,
-    backgroundColor: '#4A5340',
-    selection: true,
-    preserveObjectStacking: true,
-    fireRightClick: true,
-    stopContextMenu: true,
-  });
+    canvas = new fabric.Canvas('cadCanvas', {
+      width: w,
+      height: h,
+      backgroundColor: '#4A5340',
+      selection: true,
+      preserveObjectStacking: true,
+      fireRightClick: true,
+      stopContextMenu: true,
+    });
 
-  // Resize handler
-  window.addEventListener('resize', () => {
-    const ww = wrap.clientWidth;
-    const hh = wrap.clientHeight;
-    canvas.setDimensions({ width: ww, height: hh });
-    drawGrid();
-  });
+    // Resize handler — also fixes lingering dimension issues after orientation change
+    window.addEventListener('resize', () => {
+      const ww = wrap.clientWidth  || window.innerWidth;
+      const hh = wrap.clientHeight || Math.max(300, window.innerHeight - 160);
+      canvas.setDimensions({ width: ww, height: hh });
+      drawGrid();
+    });
 
-  // Infinite grid — drawn INSIDE renderBackground (after fill, before any objects)
-  // This ensures grid is always behind all drawn objects.
-  const _origRenderBg = canvas.renderBackground.bind(canvas);
-  canvas.renderBackground = function(ctx, vpt) {
-    _origRenderBg(ctx, vpt);        // fills backgroundColor (#4A5340)
-    if (!CAD.gridVisible) return;
-    const zoom = vpt[0], panX = vpt[4], panY = vpt[5];
-    const cw = canvas.width, ch = canvas.height;
-    const step = CAD.gridSize;
-    if (step * zoom < 4) return;    // too dense
+    // Infinite grid — drawn inside renderBackground (after fill, before any objects).
+    const _origRenderBg = canvas.renderBackground.bind(canvas);
+    canvas.renderBackground = function(ctx, vpt) {
+      _origRenderBg(ctx, vpt);
+      if (!CAD.gridVisible) return;
+      // Use passed vpt or fall back to canvas.viewportTransform
+      const _v = vpt || canvas.viewportTransform;
+      const zoom = _v[0], panX = _v[4], panY = _v[5];
+      const cw = canvas.width, ch = canvas.height;
+      if (!cw || !ch) return;
+      const step = CAD.gridSize;
+      if (step * zoom < 4) return;
 
-    const startX = Math.floor((-panX / zoom) / step) * step;
-    const startY = Math.floor((-panY / zoom) / step) * step;
-    const endX   = (cw  - panX) / zoom;
-    const endY   = (ch  - panY) / zoom;
+      const startX = Math.floor((-panX / zoom) / step) * step;
+      const startY = Math.floor((-panY / zoom) / step) * step;
+      const endX   = (cw - panX) / zoom;
+      const endY   = (ch - panY) / zoom;
 
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // screen space
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    for (let wx = startX; wx <= endX + step; wx += step) {
-      const sx = wx * zoom + panX;
-      if (sx < -1 || sx > cw + 1) continue;
-      const isMajor = Math.round(wx / step) % 5 === 0;
-      ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
-      ctx.lineWidth   = isMajor ? 0.7 : 0.4;
-      ctx.beginPath(); ctx.moveTo(sx + 0.5, 0); ctx.lineTo(sx + 0.5, ch); ctx.stroke();
-    }
-    for (let wy = startY; wy <= endY + step; wy += step) {
-      const sy = wy * zoom + panY;
-      if (sy < -1 || sy > ch + 1) continue;
-      const isMajor = Math.round(wy / step) % 5 === 0;
-      ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
-      ctx.lineWidth   = isMajor ? 0.7 : 0.4;
-      ctx.beginPath(); ctx.moveTo(0, sy + 0.5); ctx.lineTo(cw, sy + 0.5); ctx.stroke();
-    }
-    ctx.restore();
-  };
-
-  renderLayers();
-  setupCanvasEvents();
-  setupKeyboard();
-  loadFromIndexedDB();
-
-  // Initialize first drawing tab
-  if (_drawingTabs.length === 0) {
-    _tabCounter++;
-    const firstTab = {
-      id: _tabCounter, name: 'Nový výkres',
-      canvasJSON: null, scale: '1:100', paperSize: 'A3', gridSize: 100,
-      layers: JSON.parse(JSON.stringify(CAD.layers)),
-      titleBlock: JSON.parse(JSON.stringify(CAD.titleBlock)),
-      undoStack: [], redoStack: [],
+      for (let wx = startX; wx <= endX + step; wx += step) {
+        const sx = wx * zoom + panX;
+        if (sx < -1 || sx > cw + 1) continue;
+        const isMajor = Math.round(wx / step) % 5 === 0;
+        ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
+        ctx.lineWidth   = isMajor ? 0.7 : 0.4;
+        ctx.beginPath(); ctx.moveTo(sx + 0.5, 0); ctx.lineTo(sx + 0.5, ch); ctx.stroke();
+      }
+      for (let wy = startY; wy <= endY + step; wy += step) {
+        const sy = wy * zoom + panY;
+        if (sy < -1 || sy > ch + 1) continue;
+        const isMajor = Math.round(wy / step) % 5 === 0;
+        ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
+        ctx.lineWidth   = isMajor ? 0.7 : 0.4;
+        ctx.beginPath(); ctx.moveTo(0, sy + 0.5); ctx.lineTo(cw, sy + 0.5); ctx.stroke();
+      }
+      ctx.restore();
     };
-    _drawingTabs.push(firstTab);
-    _activeTabId = firstTab.id;
-    renderTabs();
-  }
 
-  // Set initial date
-  document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
-  initTouchHandlers();
-  initHUD();
+    renderLayers();
+    setupCanvasEvents();
+    setupKeyboard();
+    loadFromIndexedDB();
+
+    // Initialize first drawing tab
+    if (_drawingTabs.length === 0) {
+      _tabCounter++;
+      const firstTab = {
+        id: _tabCounter, name: 'Nový výkres',
+        canvasJSON: null, scale: '1:100', paperSize: 'A3', gridSize: 100,
+        layers: JSON.parse(JSON.stringify(CAD.layers)),
+        titleBlock: JSON.parse(JSON.stringify(CAD.titleBlock)),
+        undoStack: [], redoStack: [],
+      };
+      _drawingTabs.push(firstTab);
+      _activeTabId = firstTab.id;
+      renderTabs();
+    }
+
+    document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
+    initTouchHandlers();
+    initHUD();
+
+    // Second-pass resize: catches cases where rAF still ran before full layout
+    setTimeout(() => {
+      const ww = wrap.clientWidth  || window.innerWidth;
+      const hh = wrap.clientHeight || Math.max(300, window.innerHeight - 160);
+      if (ww !== canvas.width || hh !== canvas.height) {
+        canvas.setDimensions({ width: ww, height: hh });
+        canvas.requestRenderAll();
+      }
+    }, 200);
+  });
 }
 
 // ── GRID ───────────────────────────────────────────────────────────────────
@@ -1576,6 +1634,9 @@ function setTool(tool) {
   document.getElementById('hudRadRow').style.display = tool === 'circle' ? '' : 'none';
   document.getElementById('hudThkRow').style.display = tool === 'wall' ? '' : 'none';
   document.getElementById('hudSwRow').style.display  = drawingTools.includes(tool) ? '' : 'none';
+  document.getElementById('hudARow').style.display   = tool === 'rect' ? '' : 'none';
+  document.getElementById('hudBRow').style.display   = tool === 'rect' ? '' : 'none';
+  document.getElementById('hudActRow').style.display = 'none'; // only in select mode
   // Reset locked values when tool changes (keep thk)
   const prevThk = _hudLocked.thk;
   _hudLocked = {};
@@ -1931,14 +1992,20 @@ function handleToolMouseMove(opt) {
     case 'line':
       _tempShape.set({ x2: p.x, y2: p.y });
       break;
-    case 'rect':
+    case 'rect': {
+      let rW = Math.abs(p.x - _drawStart.x);
+      let rH = Math.abs(p.y - _drawStart.y);
+      if (_hudLocked.a != null) rW = _hudLocked.a;
+      if (_hudLocked.b != null) rH = _hudLocked.b;
       _tempShape.set({
-        width: Math.abs(p.x - _drawStart.x),
-        height: Math.abs(p.y - _drawStart.y),
+        width: rW, height: rH,
         left: Math.min(p.x, _drawStart.x),
         top: Math.min(p.y, _drawStart.y),
       });
+      if (!_hudLocked.a) document.getElementById('hudA').value = Math.round(rW);
+      if (!_hudLocked.b) document.getElementById('hudB').value = Math.round(rH);
       break;
+    }
     case 'circle':
       const dx = p.x - _drawStart.x;
       const dy = p.y - _drawStart.y;
@@ -2142,35 +2209,71 @@ function hudApplyLock(field) {
 function initHUD() {
   // Default wall thickness
   document.getElementById('hudThk').value = 300;
-  ['hudLen','hudAng','hudX','hudY','hudRad','hudThk'].forEach(id => {
+  ['hudLen','hudAng','hudX','hudY','hudRad','hudThk','hudA','hudB'].forEach(id => {
     const el = document.getElementById(id);
+    if (!el) return;
     const field = id.replace('hud','').toLowerCase();
     el.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); hudApplyLock(field); el.blur(); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (_activeTool === 'select') return; // in select mode, change fires on change event
+        hudApplyLock(field);
+        el.blur();
+      }
       if (e.key === 'Escape') { delete _hudLocked[field]; el.classList.remove('locked'); el.blur(); }
-      e.stopPropagation(); // prevent tool shortcuts while typing
+      e.stopPropagation();
     });
     el.addEventListener('dblclick', () => {
       delete _hudLocked[field]; el.classList.remove('locked');
     });
   });
 
-  // Stroke-width slider
+  // Stroke-width slider — also updates selected object in select mode
   const swSlider = document.getElementById('hudSw');
   const swVal    = document.getElementById('hudSwVal');
   const swLine   = document.getElementById('hudSwLine');
   function applySwPreview() {
     const sw = parseFloat(swSlider.value);
-    CAD.strokeWidth = sw;
     swVal.textContent = sw.toFixed(1);
-    // Scale line height for visibility: 0.3→1px, 1.5→4px, 8→20px
     const h = Math.max(1, Math.min(20, Math.round(sw * 2.5)));
     swLine.style.height = h + 'px';
+    if (_activeTool === 'select') {
+      const obj = canvas.getActiveObject();
+      if (obj) { obj.set({ strokeWidth: sw }); canvas.requestRenderAll(); saveUndoState(); }
+    } else {
+      CAD.strokeWidth = sw;
+    }
   }
   swSlider.addEventListener('input', applySwPreview);
   swSlider.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
   swSlider.addEventListener('touchmove',  e => e.stopPropagation(), { passive: true });
   applySwPreview();
+
+  // HUD inputs for select mode — edit selected object's position/size
+  function hudSelInput(id, applyFn) {
+    const el = document.getElementById(id);
+    el.addEventListener('change', () => {
+      if (_activeTool !== 'select') return;
+      const obj = canvas.getActiveObject();
+      if (!obj) return;
+      applyFn(obj, parseFloat(el.value));
+      obj.setCoords();
+      canvas.requestRenderAll();
+      saveUndoState();
+    });
+  }
+  hudSelInput('hudX',   (o, v) => o.set({ left: v }));
+  hudSelInput('hudY',   (o, v) => o.set({ top: v }));
+  hudSelInput('hudAng', (o, v) => o.set({ angle: v }));
+  hudSelInput('hudRad', (o, v) => {
+    if (o.type === 'circle') o.set({ radius: v / (o.scaleX || 1) });
+  });
+  hudSelInput('hudA', (o, v) => {
+    if (o.type === 'rect') o.set({ width: v / (o.scaleX || 1) });
+  });
+  hudSelInput('hudB', (o, v) => {
+    if (o.type === 'rect') o.set({ height: v / (o.scaleY || 1) });
+  });
 }
 
 function hudGetConstrainedPoint(raw) {
@@ -2368,6 +2471,8 @@ function addLayer() {
 function updateProps() {
   const obj = canvas.getActiveObject();
   if (!obj) { clearProps(); return; }
+
+  // ── Side properties panel ──
   const el = document.getElementById('propsContent');
   const type = obj.type || 'object';
   const layerName = CAD.layers.find(l => l.id === obj._cadLayer)?.name || '—';
@@ -2377,15 +2482,67 @@ function updateProps() {
     <div class="prop-row"><label>X</label><input type="number" value="${Math.round(obj.left || 0)}" onchange="setProp('left',+this.value)"></div>
     <div class="prop-row"><label>Y</label><input type="number" value="${Math.round(obj.top || 0)}" onchange="setProp('top',+this.value)"></div>
   `;
-  if (obj.width !== undefined) html += `<div class="prop-row"><label>Šířka</label><input type="number" value="${Math.round(obj.width * (obj.scaleX || 1))}" onchange="setProp('width',+this.value)"></div>`;
+  if (obj.width  !== undefined) html += `<div class="prop-row"><label>Šířka</label><input type="number" value="${Math.round(obj.width  * (obj.scaleX || 1))}" onchange="setProp('width',+this.value)"></div>`;
   if (obj.height !== undefined) html += `<div class="prop-row"><label>Výška</label><input type="number" value="${Math.round(obj.height * (obj.scaleY || 1))}" onchange="setProp('height',+this.value)"></div>`;
-  if (obj.angle !== undefined) html += `<div class="prop-row"><label>Úhel</label><input type="number" value="${Math.round(obj.angle)}" onchange="setProp('angle',+this.value)"></div>`;
+  if (obj.angle  !== undefined) html += `<div class="prop-row"><label>Úhel</label><input type="number" value="${Math.round(obj.angle)}" onchange="setProp('angle',+this.value)"></div>`;
   html += `<div class="prop-row"><label>Barva</label><input type="color" value="${obj.stroke || obj.fill || '#ffffff'}" onchange="setPropColor(this.value)"></div>`;
   el.innerHTML = html;
+
+  // ── HUD panel (only in select mode) ──
+  if (_activeTool !== 'select') return;
+  const hud = document.getElementById('drawHUD');
+  hud.classList.add('visible');
+
+  // Show X/Y
+  document.getElementById('hudX').value = Math.round(obj.left || 0);
+  document.getElementById('hudY').value = Math.round(obj.top  || 0);
+
+  // Hide drawing-only rows
+  document.getElementById('hudLenRow').style.display = 'none';
+  document.getElementById('hudAngRow').style.display = 'none';
+  document.getElementById('hudThkRow').style.display = 'none';
+  document.getElementById('hudSwRow').style.display  = 'none';
+
+  // Radius row for circles
+  const isCircle = type === 'circle';
+  document.getElementById('hudRadRow').style.display = isCircle ? '' : 'none';
+  if (isCircle) document.getElementById('hudRad').value = Math.round(obj.radius * (obj.scaleX || 1));
+
+  // A/B for rects (and walls, which are fabric.Rect)
+  const isRect = type === 'rect';
+  document.getElementById('hudARow').style.display = isRect ? '' : 'none';
+  document.getElementById('hudBRow').style.display = isRect ? '' : 'none';
+  if (isRect) {
+    document.getElementById('hudA').value = Math.round(obj.width  * (obj.scaleX || 1));
+    document.getElementById('hudB').value = Math.round(obj.height * (obj.scaleY || 1));
+  }
+
+  // Angle row for rotated objects
+  const hasAngle = obj.angle !== undefined && obj.angle !== 0;
+  // We can reuse hudAngRow as display-only info for angle
+  if (obj.angle !== undefined) {
+    document.getElementById('hudAngRow').style.display = '';
+    document.getElementById('hudAng').value = Math.round(obj.angle);
+  }
+
+  // Stroke width slider
+  document.getElementById('hudSwRow').style.display = '';
+  const sw = obj.strokeWidth || CAD.strokeWidth;
+  document.getElementById('hudSw').value = sw;
+  document.getElementById('hudSwVal').textContent = sw.toFixed(1);
+  const h2 = Math.max(1, Math.min(20, Math.round(sw * 2.5)));
+  document.getElementById('hudSwLine').style.height = h2 + 'px';
+
+  // Action buttons
+  document.getElementById('hudActRow').style.display = '';
 }
 
 function clearProps() {
   document.getElementById('propsContent').innerHTML = '<div style="color:var(--muted);font-size:10px;padding:8px 0;">Nic nevybráno</div>';
+  // Hide HUD when nothing is selected (only matters in select mode)
+  if (_activeTool === 'select') {
+    document.getElementById('drawHUD').classList.remove('visible');
+  }
 }
 
 function setProp(prop, val) {
@@ -2402,6 +2559,67 @@ function setPropColor(val) {
   if (obj.stroke) obj.set('stroke', val);
   if (obj.fill && obj.fill !== 'transparent') obj.set('fill', val);
   canvas.renderAll();
+  saveUndoState();
+}
+
+// ── SELECTION OPERATIONS ────────────────────────────────────────────────────
+function selDuplicate() {
+  const obj = canvas.getActiveObject();
+  if (!obj) return;
+  obj.clone(clone => {
+    clone.set({ left: obj.left + 20, top: obj.top + 20 });
+    canvas.add(clone);
+    canvas.setActiveObject(clone);
+    canvas.requestRenderAll();
+    saveUndoState();
+  });
+}
+
+function selMirrorH() {
+  const obj = canvas.getActiveObject();
+  if (!obj) return;
+  obj.set({ flipX: !obj.flipX });
+  canvas.requestRenderAll();
+  saveUndoState();
+}
+
+function selMirrorV() {
+  const obj = canvas.getActiveObject();
+  if (!obj) return;
+  obj.set({ flipY: !obj.flipY });
+  canvas.requestRenderAll();
+  saveUndoState();
+}
+
+function selRotate90() {
+  const obj = canvas.getActiveObject();
+  if (!obj) return;
+  obj.set({ angle: ((obj.angle || 0) + 90) % 360 });
+  obj.setCoords();
+  canvas.requestRenderAll();
+  saveUndoState();
+  // Update HUD angle display
+  document.getElementById('hudAng').value = Math.round(obj.angle);
+}
+
+function selScalePrompt() {
+  const obj = canvas.getActiveObject();
+  if (!obj) return;
+  const factor = parseFloat(prompt('Faktor měřítka (např. 2 = 2×, 0.5 = ½):', '1'));
+  if (isNaN(factor) || factor <= 0) return;
+  obj.set({ scaleX: (obj.scaleX || 1) * factor, scaleY: (obj.scaleY || 1) * factor });
+  obj.setCoords();
+  canvas.requestRenderAll();
+  saveUndoState();
+  updateProps();
+}
+
+function selDelete() {
+  const obj = canvas.getActiveObject();
+  if (!obj) return;
+  canvas.remove(obj);
+  canvas.discardActiveObject();
+  canvas.requestRenderAll();
   saveUndoState();
 }
 
