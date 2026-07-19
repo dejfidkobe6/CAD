@@ -53,7 +53,7 @@
   --cad-grid: rgba(201,168,76,0.18);
   --cad-grid-major: rgba(201,168,76,0.45);
   --cad-snap: #ffee44;
-  --cad-crosshair: rgba(255,255,255,0.35);
+  --cad-crosshair: rgba(201,168,76,0.75);
 
   --toolbar-bg: #1e2419;
   --panel-bg: #222918;
@@ -317,9 +317,21 @@ body {
 #crosshairH, #crosshairV {
   position: absolute; pointer-events: none;
   background: var(--cad-crosshair); z-index: 5;
+  box-shadow: 0 0 0 0.5px rgba(0,0,0,0.4);
 }
-#crosshairH { height: 1px; width: 100%; left: 0; }
-#crosshairV { width: 1px; height: 100%; top: 0; }
+#crosshairH { height: 1.5px; width: 100%; left: 0; }
+#crosshairV { width: 1.5px; height: 100%; top: 0; }
+/* Cursor center dot — shows active drawing position */
+#cursorDot {
+  position: absolute; pointer-events: none;
+  width: 10px; height: 10px;
+  border: 2px solid var(--cad-crosshair);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  display: none;
+}
 
 /* Snap indicator */
 .snap-dot {
@@ -879,6 +891,7 @@ body {
     <canvas id="cadCanvas"></canvas>
     <div id="crosshairH"></div>
     <div id="crosshairV"></div>
+    <div id="cursorDot"></div>
     <div class="snap-dot" id="snapDot"></div>
     <div id="polarTrack"></div>
     <div class="drawing-info" id="drawingInfo">
@@ -1167,9 +1180,6 @@ body {
 <!-- TOAST -->
 <div id="toast"></div>
 
-<!-- DEBUG OVERLAY — permanent, remove after diagnosis -->
-<div id="dbg" style="position:fixed;top:48px;left:0;right:0;background:rgba(180,0,0,0.88);color:#fff;z-index:99990;font-size:11px;font-family:monospace;padding:2px 6px;pointer-events:none;white-space:pre;"></div>
-
 <!-- AUTH GATE — skryje se po úspěšném přihlášení -->
 <div id="authGate" style="position:fixed;inset:0;z-index:99999;background:#0d1117;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
   <img src="/besix_logo_highres_transparent.png" style="height:48px;filter:brightness(1.1)">
@@ -1425,9 +1435,6 @@ function initCAD() {
       fireRightClick: true,
       stopContextMenu: true,
     });
-    const _dbg = document.getElementById('dbg');
-    if (_dbg) _dbg.textContent = 'INIT: ' + w + '×' + h + ' DPR=' + (window.devicePixelRatio||1).toFixed(1) + ' tap canvas to test';
-    toast('CAD init: ' + w + '×' + h + ' DPR=' + (window.devicePixelRatio||1).toFixed(1));
 
     // ResizeObserver keeps canvas sized to wrapper as layout changes
     if (window.ResizeObserver) {
@@ -1537,15 +1544,22 @@ function setupCanvasEvents() {
   const chH = document.getElementById('crosshairH');
   const chV = document.getElementById('crosshairV');
 
-  // Crosshair
-  wrap.addEventListener('mousemove', (e) => {
-    const r = wrap.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const y = e.clientY - r.top;
-    chH.style.top = y + 'px';
+  // Crosshair + cursor dot
+  const cursorDot = document.getElementById('cursorDot');
+  function moveCrosshair(x, y) {
+    chH.style.top  = y + 'px';
     chV.style.left = x + 'px';
+    if (cursorDot) { cursorDot.style.left = x + 'px'; cursorDot.style.top = y + 'px'; }
     document.getElementById('cursorX').textContent = Math.round(x);
     document.getElementById('cursorY').textContent = Math.round(y);
+  }
+  wrap.addEventListener('mousemove', (e) => {
+    const r = wrap.getBoundingClientRect();
+    moveCrosshair(e.clientX - r.left, e.clientY - r.top);
+  });
+  // Show cursor dot only in drawing tools
+  wrap.addEventListener('mouseenter', () => {
+    if (cursorDot) cursorDot.style.display = (_activeTool !== 'select') ? 'block' : 'none';
   });
 
   // Zoom (mouse wheel)
@@ -1650,6 +1664,9 @@ function setTool(tool) {
   if (_tempShape) { canvas.remove(_tempShape); _tempShape = null; }
   _polyPoints = [];
   hidePolarTrack();
+  // Show/hide cursor dot based on tool
+  const cd = document.getElementById('cursorDot');
+  if (cd) cd.style.display = (tool === 'select') ? 'none' : 'block';
 
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
   const btn = document.querySelector(`.tool-btn[data-tool="${tool}"]`);
@@ -3806,11 +3823,20 @@ function initTouchHandlers() {
   // Using canvasWrap (not canvas.wrapperEl) ensures we catch touches even when
   // the Fabric.js canvas elements are 0×0 (bad layout timing at init).
 
+  // Helper: update crosshair + cursor dot from client coords
+  function touchMoveCrosshair(clientX, clientY) {
+    const r = wrap.getBoundingClientRect();
+    const x = clientX - r.left, y = clientY - r.top;
+    const chH = document.getElementById('crosshairH');
+    const chV = document.getElementById('crosshairV');
+    const cd  = document.getElementById('cursorDot');
+    if (chH) chH.style.top  = y + 'px';
+    if (chV) chV.style.left = x + 'px';
+    if (cd)  { cd.style.left = x + 'px'; cd.style.top = y + 'px'; cd.style.display = 'block'; }
+  }
+
   wrap.addEventListener('touchstart', function(e) {
     ensureCanvasSized();
-    const _d = document.getElementById('dbg');
-    if (_d) _d.textContent = 'TOUCH: tool=' + _activeTool + ' canvas=' + canvas.width + '×' + canvas.height + ' fingers=' + e.touches.length;
-    toast('Touch: ' + _activeTool + ' ' + canvas.width + '×' + canvas.height);
 
     if (e.touches.length === 2) {
       e.preventDefault();
@@ -3832,21 +3858,27 @@ function initTouchHandlers() {
       const t = e.touches[0];
       const target = canvas.findTarget({ clientX: t.clientX, clientY: t.clientY }, false);
       if (target) {
-        // Touching a canvas object → let Fabric.js handle selection/drag
         _selectHitTarget = true;
         panData = null;
-        return; // no preventDefault/stopPropagation: Fabric.js gets the event
+        return; // Fabric.js handles selection/drag
       }
-      // Touching empty space → pan
       _selectHitTarget = false;
       panData = { x: t.clientX, y: t.clientY,
         vx: canvas.viewportTransform[4], vy: canvas.viewportTransform[5] };
-      e.stopImmediatePropagation(); // prevent Fabric.js rubber-band on empty space
+      e.stopImmediatePropagation();
       return;
     }
+
+    // Drawing tool: update crosshair to show where finger is.
+    // Point is NOT placed here — it's placed on touchend (lift).
     e.preventDefault();
     e.stopImmediatePropagation();
-    handleToolMouseDown({ e: makeFakeEvent(e.touches[0]) });
+    const t = e.touches[0];
+    touchMoveCrosshair(t.clientX, t.clientY);
+    // If already drawing, update live preview immediately on touch
+    if (_isDrawing) {
+      handleToolMouseMove({ e: makeFakeEvent(t) });
+    }
   }, { capture: true, passive: false });
 
   wrap.addEventListener('touchmove', function(e) {
@@ -3873,17 +3905,12 @@ function initTouchHandlers() {
     if (e.touches.length !== 1 || isPinching) return;
 
     if (_activeTool === 'select') {
-      if (_selectHitTarget) {
-        // Object is being dragged by Fabric.js — just prevent browser scroll
-        e.preventDefault();
-        return; // Fabric.js handles the move (no stopPropagation)
-      }
+      if (_selectHitTarget) { e.preventDefault(); return; }
       if (!panData) return;
       e.preventDefault();
-      e.stopImmediatePropagation(); // prevent Fabric.js rubber-band during pan
+      e.stopImmediatePropagation();
       const t = e.touches[0];
-      const dx = t.clientX - panData.x;
-      const dy = t.clientY - panData.y;
+      const dx = t.clientX - panData.x, dy = t.clientY - panData.y;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
         const vpt = canvas.viewportTransform;
         vpt[4] = panData.vx + dx;
@@ -3892,16 +3919,12 @@ function initTouchHandlers() {
       }
       return;
     }
+
+    // Drawing tool: move crosshair + show live preview
     e.preventDefault();
     e.stopImmediatePropagation();
     const mt = e.touches[0];
-    // Update crosshair position on move
-    const mWrap = document.getElementById('canvasWrap');
-    const mRect = mWrap.getBoundingClientRect();
-    const chH = document.getElementById('crosshairH');
-    const chV = document.getElementById('crosshairV');
-    if (chH) chH.style.top  = (mt.clientY - mRect.top)  + 'px';
-    if (chV) chV.style.left = (mt.clientX - mRect.left) + 'px';
+    touchMoveCrosshair(mt.clientX, mt.clientY);
     handleToolMouseMove({ e: makeFakeEvent(mt) });
   }, { capture: true, passive: false });
 
@@ -3917,17 +3940,18 @@ function initTouchHandlers() {
       if (!wasHit) e.stopImmediatePropagation();
       return;
     }
-    // Drawing tools: click-click model — touchend does nothing.
-    // The second touchstart calls handleToolMouseDown to finalize.
+    // Drawing tool: lifting finger = PLACE POINT at cursor position.
+    // This lets user drag to exact snapped position then lift to confirm.
     panData = null;
+    const t = e.changedTouches[0];
+    if (t) {
+      touchMoveCrosshair(t.clientX, t.clientY);
+      handleToolMouseDown({ e: makeFakeEvent(t) });
+    }
   }, { capture: true });
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
-window.addEventListener('error', function(ev) {
-  const d = document.getElementById('dbg');
-  if (d) d.textContent = 'JS ERROR: ' + ev.message + ' @line ' + ev.lineno;
-});
 bootAuth();
 </script>
 </body>
