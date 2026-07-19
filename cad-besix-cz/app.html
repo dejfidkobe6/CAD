@@ -1409,7 +1409,39 @@ function drawGrid() {
     .filter(o => o.excludeFromExport)
     .forEach(o => canvas.remove(o));
   _gridLines = [];
-  if (canvas) canvas.requestRenderAll();
+  if (!CAD.gridVisible) { canvas.renderAll(); return; }
+
+  const step = CAD.gridSize * (CAD.zoom || 1) * 0.5; // px per grid cell (approx)
+  if (step < 8) { canvas.renderAll(); return; } // too dense
+
+  const w = canvas.width;
+  const h = canvas.height;
+
+  for (let x = 0; x < w; x += step) {
+    const isMajor = Math.round(x / step) % 5 === 0;
+    const line = new fabric.Line([x, 0, x, h], {
+      stroke: isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)',
+      strokeWidth: isMajor ? 0.7 : 0.4,
+      selectable: false, evented: false,
+      excludeFromExport: true,
+    });
+    _gridLines.push(line);
+    canvas.add(line);
+    canvas.sendToBack(line);
+  }
+  for (let y = 0; y < h; y += step) {
+    const isMajor = Math.round(y / step) % 5 === 0;
+    const line = new fabric.Line([0, y, w, y], {
+      stroke: isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)',
+      strokeWidth: isMajor ? 0.7 : 0.4,
+      selectable: false, evented: false,
+      excludeFromExport: true,
+    });
+    _gridLines.push(line);
+    canvas.add(line);
+    canvas.sendToBack(line);
+  }
+  canvas.renderAll();
 }
 
 // ── CANVAS EVENTS ──────────────────────────────────────────────────────────
@@ -2517,7 +2549,7 @@ async function importImage(file) {
       _cadLayer: layer.id, _cadType: 'image',
     });
     canvas.add(fabricImg);
-    canvas.sendToBack(fabricImg);
+    canvas.moveTo(fabricImg, _gridLines.length);
     zoomExtents();
     saveUndoState();
     document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
