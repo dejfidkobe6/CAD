@@ -323,12 +323,21 @@ body {
 /* Snap indicator */
 .snap-dot {
   position: absolute; pointer-events: none;
-  width: 10px; height: 10px;
+  width: 12px; height: 12px;
   border: 2px solid var(--cad-snap);
   border-radius: 50%;
   transform: translate(-50%, -50%);
   z-index: 10;
   display: none;
+}
+/* Polar tracking line (angle snap indicator) */
+#polarTrack {
+  position: absolute; pointer-events: none;
+  z-index: 9; display: none;
+  border-top: 1px dashed rgba(255,238,68,0.6);
+  transform-origin: 0 50%;
+  height: 0;
+  top: 0; left: 0;
 }
 
 /* ─── RIGHT PANEL ─── */
@@ -852,6 +861,7 @@ body {
     <div id="crosshairH"></div>
     <div id="crosshairV"></div>
     <div class="snap-dot" id="snapDot"></div>
+    <div id="polarTrack"></div>
     <div class="drawing-info" id="drawingInfo">
       <span><strong id="diName">Nový výkres</strong></span>
       <span>Měřítko: <strong id="diScale">1:100</strong></span>
@@ -1207,7 +1217,7 @@ function switchDrawingTab(id) {
     canvas.loadFromJSON(tab.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
   } else {
     canvas.clear();
-    canvas.backgroundColor = '#1a1a2e';
+    canvas.backgroundColor = '#4A5340';
     drawGrid();
     canvas.renderAll();
   }
@@ -1232,7 +1242,7 @@ function saveCurrentTabState() {
 function closeDrawingTab(id) {
   if (_drawingTabs.length <= 1) {
     // Last tab — just clear it
-    canvas.clear(); canvas.backgroundColor = '#1a1a2e'; drawGrid(); canvas.renderAll();
+    canvas.clear(); canvas.backgroundColor = '#4A5340'; drawGrid(); canvas.renderAll();
     const tab = _drawingTabs[0];
     tab.canvasJSON = null; tab.name = 'Nový výkres';
     CAD.undoStack = []; CAD.redoStack = [];
@@ -1362,56 +1372,43 @@ function initCAD() {
     drawGrid();
   });
 
-  // Infinite grid — drawn directly on canvas context after every render
-  canvas.on('after:render', function() {
+  // Infinite grid — drawn INSIDE renderBackground (after fill, before any objects)
+  // This ensures grid is always behind all drawn objects.
+  const _origRenderBg = canvas.renderBackground.bind(canvas);
+  canvas.renderBackground = function(ctx, vpt) {
+    _origRenderBg(ctx, vpt);        // fills backgroundColor (#4A5340)
     if (!CAD.gridVisible) return;
-    const ctx = canvas.contextContainer;
-    const vpt = canvas.viewportTransform;
-    const zoom = vpt[0];
-    const panX = vpt[4];
-    const panY = vpt[5];
-    const cw = canvas.width;
-    const ch = canvas.height;
+    const zoom = vpt[0], panX = vpt[4], panY = vpt[5];
+    const cw = canvas.width, ch = canvas.height;
     const step = CAD.gridSize;
-    if (step * zoom < 4) return; // too dense to draw
+    if (step * zoom < 4) return;    // too dense
 
-    const worldLeft   = -panX / zoom;
-    const worldTop    = -panY / zoom;
-    const worldRight  = (cw - panX) / zoom;
-    const worldBottom = (ch - panY) / zoom;
+    const startX = Math.floor((-panX / zoom) / step) * step;
+    const startY = Math.floor((-panY / zoom) / step) * step;
+    const endX   = (cw  - panX) / zoom;
+    const endY   = (ch  - panY) / zoom;
 
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // screen-space drawing
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // screen space
 
-    const startX = Math.floor(worldLeft  / step) * step;
-    const startY = Math.floor(worldTop   / step) * step;
-
-    for (let wx = startX; wx <= worldRight + step; wx += step) {
+    for (let wx = startX; wx <= endX + step; wx += step) {
       const sx = wx * zoom + panX;
       if (sx < -1 || sx > cw + 1) continue;
       const isMajor = Math.round(wx / step) % 5 === 0;
       ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
       ctx.lineWidth   = isMajor ? 0.7 : 0.4;
-      ctx.beginPath();
-      ctx.moveTo(sx + 0.5, 0);
-      ctx.lineTo(sx + 0.5, ch);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx + 0.5, 0); ctx.lineTo(sx + 0.5, ch); ctx.stroke();
     }
-
-    for (let wy = startY; wy <= worldBottom + step; wy += step) {
+    for (let wy = startY; wy <= endY + step; wy += step) {
       const sy = wy * zoom + panY;
       if (sy < -1 || sy > ch + 1) continue;
       const isMajor = Math.round(wy / step) % 5 === 0;
       ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
       ctx.lineWidth   = isMajor ? 0.7 : 0.4;
-      ctx.beginPath();
-      ctx.moveTo(0, sy + 0.5);
-      ctx.lineTo(cw, sy + 0.5);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, sy + 0.5); ctx.lineTo(cw, sy + 0.5); ctx.stroke();
     }
-
     ctx.restore();
-  });
+  };
 
   renderLayers();
   setupCanvasEvents();
@@ -1441,44 +1438,13 @@ function initCAD() {
 
 // ── GRID ───────────────────────────────────────────────────────────────────
 function drawGrid() {
-  // Remove any legacy fabric grid lines from old JSON snapshots
+  // Remove ALL legacy fabric grid lines (saved in old JSON or from previous drawGrid calls)
   canvas.getObjects()
     .filter(o => o.excludeFromExport)
     .forEach(o => canvas.remove(o));
   _gridLines = [];
-  if (!CAD.gridVisible) { canvas.renderAll(); return; }
-
-  const step = CAD.gridSize * (CAD.zoom || 1) * 0.5; // px per grid cell (approx)
-  if (step < 8) { canvas.renderAll(); return; } // too dense
-
-  const w = canvas.width;
-  const h = canvas.height;
-
-  for (let x = 0; x < w; x += step) {
-    const isMajor = Math.round(x / step) % 5 === 0;
-    const line = new fabric.Line([x, 0, x, h], {
-      stroke: isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)',
-      strokeWidth: isMajor ? 0.7 : 0.4,
-      selectable: false, evented: false,
-      excludeFromExport: true,
-    });
-    _gridLines.push(line);
-    canvas.add(line);
-    canvas.sendToBack(line);
-  }
-  for (let y = 0; y < h; y += step) {
-    const isMajor = Math.round(y / step) % 5 === 0;
-    const line = new fabric.Line([0, y, w, y], {
-      stroke: isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)',
-      strokeWidth: isMajor ? 0.7 : 0.4,
-      selectable: false, evented: false,
-      excludeFromExport: true,
-    });
-    _gridLines.push(line);
-    canvas.add(line);
-    canvas.sendToBack(line);
-  }
-  canvas.renderAll();
+  // Grid is drawn via the after:render canvas-context handler registered in initCAD()
+  if (canvas) canvas.requestRenderAll();
 }
 
 // ── CANVAS EVENTS ──────────────────────────────────────────────────────────
@@ -1578,6 +1544,7 @@ function setTool(tool) {
   _drawStart = null;
   if (_tempShape) { canvas.remove(_tempShape); _tempShape = null; }
   _polyPoints = [];
+  hidePolarTrack();
 
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
   const btn = document.querySelector(`.tool-btn[data-tool="${tool}"]`);
@@ -1624,23 +1591,32 @@ function getObjSnapPoints(obj) {
   const pts = [];
   if (obj.excludeFromExport || !obj.visible) return pts;
   switch (obj.type) {
-    case 'line':
-      pts.push({ x: obj.x1, y: obj.y1, snapType: 'endpoint' });
-      pts.push({ x: obj.x2, y: obj.y2, snapType: 'endpoint' });
-      pts.push({ x: (obj.x1+obj.x2)/2, y: (obj.y1+obj.y2)/2, snapType: 'midpoint' });
+    case 'line': {
+      // Transform local x1/y1/x2/y2 to world space via the object's matrix
+      const lm = obj.calcTransformMatrix();
+      const cx = (obj.x1 + obj.x2) / 2, cy = (obj.y1 + obj.y2) / 2;
+      const lp1 = fabric.util.transformPoint({ x: obj.x1 - cx, y: obj.y1 - cy }, lm);
+      const lp2 = fabric.util.transformPoint({ x: obj.x2 - cx, y: obj.y2 - cy }, lm);
+      pts.push({ x: lp1.x, y: lp1.y, snapType: 'endpoint' });
+      pts.push({ x: lp2.x, y: lp2.y, snapType: 'endpoint' });
+      pts.push({ x: (lp1.x+lp2.x)/2, y: (lp1.y+lp2.y)/2, snapType: 'midpoint' });
       break;
+    }
     case 'rect': {
-      const l = obj.left, t = obj.top;
-      const w = obj.width * (obj.scaleX||1), h = obj.height * (obj.scaleY||1);
-      pts.push({ x:l,     y:t,     snapType:'endpoint' });
-      pts.push({ x:l+w,   y:t,     snapType:'endpoint' });
-      pts.push({ x:l+w,   y:t+h,   snapType:'endpoint' });
-      pts.push({ x:l,     y:t+h,   snapType:'endpoint' });
-      pts.push({ x:l+w/2, y:t,     snapType:'midpoint' });
-      pts.push({ x:l+w,   y:t+h/2, snapType:'midpoint' });
-      pts.push({ x:l+w/2, y:t+h,   snapType:'midpoint' });
-      pts.push({ x:l,     y:t+h/2, snapType:'midpoint' });
-      pts.push({ x:l+w/2, y:t+h/2, snapType:'center' });
+      // Use aCoords for accurate world-space corners (handles rotation/scale)
+      const ac = obj.aCoords;
+      if (ac) {
+        const {tl, tr, br, bl} = ac;
+        pts.push({ x:tl.x, y:tl.y, snapType:'endpoint' });
+        pts.push({ x:tr.x, y:tr.y, snapType:'endpoint' });
+        pts.push({ x:br.x, y:br.y, snapType:'endpoint' });
+        pts.push({ x:bl.x, y:bl.y, snapType:'endpoint' });
+        pts.push({ x:(tl.x+tr.x)/2, y:(tl.y+tr.y)/2, snapType:'midpoint' });
+        pts.push({ x:(tr.x+br.x)/2, y:(tr.y+br.y)/2, snapType:'midpoint' });
+        pts.push({ x:(br.x+bl.x)/2, y:(br.y+bl.y)/2, snapType:'midpoint' });
+        pts.push({ x:(bl.x+tl.x)/2, y:(bl.y+tl.y)/2, snapType:'midpoint' });
+        pts.push({ x:(tl.x+br.x)/2, y:(tl.y+br.y)/2, snapType:'center' });
+      }
       break;
     }
     case 'circle': {
@@ -1742,6 +1718,52 @@ function hideSnapMarker() {
   document.getElementById('snapDot').style.display = 'none';
 }
 
+// Polar tracking snap — snaps to nearest 45° multiple when within threshold
+const _POLAR_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315];
+const _POLAR_THRESH = 8; // degrees
+
+function applyPolarSnap(raw, start) {
+  if (!start) { hidePolarTrack(); return raw; }
+  const dx = raw.x - start.x, dy = raw.y - start.y;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  if (len < 1) { hidePolarTrack(); return raw; }
+  const curDeg = (Math.atan2(-dy, dx) * 180 / Math.PI + 360) % 360;
+  let nearest = null, minDiff = _POLAR_THRESH;
+  for (const a of _POLAR_ANGLES) {
+    const diff = Math.min(Math.abs(curDeg - a), 360 - Math.abs(curDeg - a));
+    if (diff < minDiff) { minDiff = diff; nearest = a; }
+  }
+  if (nearest === null) { hidePolarTrack(); return raw; }
+  const snapRad = nearest * Math.PI / 180;
+  const snapped = {
+    x: start.x + len * Math.cos(snapRad),
+    y: start.y - len * Math.sin(snapRad),
+    _polar: nearest,
+  };
+  showPolarTrack(start, snapped, nearest);
+  return snapped;
+}
+
+function showPolarTrack(start, end, angleDeg) {
+  const vpt = canvas.viewportTransform;
+  const z = vpt[0], px = vpt[4], py = vpt[5];
+  const sx = start.x * z + px, sy = start.y * z + py;
+  const ex = end.x * z + px, ey = end.y * z + py;
+  const len = Math.sqrt((ex-sx)**2 + (ey-sy)**2);
+  const screenAngle = Math.atan2(ey - sy, ex - sx) * 180 / Math.PI;
+  const track = document.getElementById('polarTrack');
+  track.style.display = 'block';
+  track.style.left = sx + 'px';
+  track.style.top  = sy + 'px';
+  track.style.width = Math.max(len, 200) + 'px'; // extend past cursor
+  track.style.transform = `rotate(${screenAngle}deg)`;
+  track.title = angleDeg + '°';
+}
+
+function hidePolarTrack() {
+  document.getElementById('polarTrack').style.display = 'none';
+}
+
 function getPointer(opt) {
   if (opt.e && opt.e._point) return opt.e._point;
   const raw = canvas.getPointer(opt.e);
@@ -1765,11 +1787,19 @@ function getPointer(opt) {
   }
 
   if (CAD.orthoEnabled && _drawStart) {
+    // ORTHO mode: force horizontal or vertical
     const dx = Math.abs(p.x - _drawStart.x);
     const dy = Math.abs(p.y - _drawStart.y);
     if (dx > dy) p.y = _drawStart.y;
     else p.x = _drawStart.x;
+    hidePolarTrack();
+  } else if (_isDrawing && _drawStart && ['line','wall','dimension'].includes(_activeTool)) {
+    // Polar tracking: snap to 45° multiples
+    p = applyPolarSnap(p, _drawStart);
+  } else {
+    hidePolarTrack();
   }
+
   // Apply HUD constraints (locked length/angle/x/y)
   if (Object.keys(_hudLocked).length) p = hudGetConstrainedPoint(p);
   // Update HUD display
@@ -1798,6 +1828,7 @@ function handleToolMouseDown(opt) {
         canvas.add(_tempShape);
       } else {
         _tempShape.set({ x2: p.x, y2: p.y });
+        hidePolarTrack();
         saveUndoState();
         _tempShape = null;
         _isDrawing = false;
@@ -2597,10 +2628,11 @@ async function importImage(file) {
     const fabricImg = new fabric.Image(imgEl, {
       left: 0, top: 0,
       selectable: true, evented: true, hasControls: true,
-      _cadLayer: layer.id, _cadType: 'image',
+      lockMovementX: true, lockMovementY: true,
+      _cadLayer: layer.id, _cadType: 'image', _cadLocked: true,
     });
     canvas.add(fabricImg);
-    canvas.moveTo(fabricImg, _gridLines.length);
+    canvas.sendToBack(fabricImg);
     zoomExtents();
     saveUndoState();
     document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
@@ -2691,8 +2723,9 @@ async function importPDFBackground(file) {
         selectable: true,
         evented: true,
         hasControls: true,
+        lockMovementX: true, lockMovementY: true,
         _cadLayer: layer.id,
-        _cadType: 'pdf_background',
+        _cadType: 'pdf_background', _cadLocked: true,
       });
       canvas.add(fabricImg);
       canvas.sendToBack(fabricImg);
