@@ -905,11 +905,19 @@ body {
   <div class="hud-sep"></div>
   <div class="hud-row" id="hudLenRow">
     <span class="hud-label">mm</span>
-    <input id="hudLen" class="hud-input" type="number" step="1" min="0" placeholder="délka" title="Délka v mm (Enter = zafixovat)">
+    <input id="hudLen" class="hud-input" type="number" step="1" min="0" placeholder="délka" title="Délka (Enter = zafixovat)">
   </div>
   <div class="hud-row" id="hudAngRow">
     <span class="hud-label">°</span>
     <input id="hudAng" class="hud-input" type="number" step="1" placeholder="úhel" title="Úhel ve stupních (Enter = zafixovat)">
+  </div>
+  <div class="hud-row" id="hudRadRow">
+    <span class="hud-label">r</span>
+    <input id="hudRad" class="hud-input" type="number" step="1" min="0" placeholder="poloměr" title="Poloměr (Enter = zafixovat)">
+  </div>
+  <div class="hud-row" id="hudThkRow">
+    <span class="hud-label">t</span>
+    <input id="hudThk" class="hud-input" type="number" step="1" min="1" placeholder="tloušťka" title="Tloušťka zdi (Enter = zafixovat)">
   </div>
 </div>
 
@@ -1494,9 +1502,13 @@ function setTool(tool) {
   const hasLenAng = ['line','wall','dimension'].includes(tool);
   document.getElementById('hudLenRow').style.display = hasLenAng ? '' : 'none';
   document.getElementById('hudAngRow').style.display = hasLenAng ? '' : 'none';
-  // Reset locked values when tool changes
+  document.getElementById('hudRadRow').style.display = tool === 'circle' ? '' : 'none';
+  document.getElementById('hudThkRow').style.display = tool === 'wall' ? '' : 'none';
+  // Reset locked values when tool changes (keep thk)
+  const prevThk = _hudLocked.thk;
   _hudLocked = {};
-  document.querySelectorAll('.hud-input').forEach(i => i.classList.remove('locked'));
+  if (prevThk != null) _hudLocked.thk = prevThk;
+  document.querySelectorAll('.hud-input:not(#hudThk)').forEach(i => i.classList.remove('locked'));
 }
 
 function getActiveLayer() {
@@ -1749,7 +1761,8 @@ function handleToolMouseDown(opt) {
       if (!_isDrawing) {
         _isDrawing = true;
         _drawStart = p;
-        const thickness = 300 * 0.5; // 300mm at scale
+        const thkVal = _hudLocked.thk != null ? _hudLocked.thk : (parseFloat(document.getElementById('hudThk').value) || 300);
+        const thickness = thkVal * 0.5;
         _tempShape = new fabric.Rect({
           left: p.x, top: p.y - thickness / 2,
           width: 0, height: thickness,
@@ -1978,6 +1991,11 @@ function hudUpdate(p) {
     if (!_hudLocked.len) document.getElementById('hudLen').value = Math.round(len * 10) / 10;
     if (!_hudLocked.ang) document.getElementById('hudAng').value = ang;
   }
+  if (_drawStart && _activeTool === 'circle') {
+    const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+    const rad = Math.sqrt(dx*dx + dy*dy);
+    if (!_hudLocked.rad) document.getElementById('hudRad').value = Math.round(rad * 10) / 10;
+  }
 }
 
 function hudApplyLock(field) {
@@ -1990,7 +2008,9 @@ function hudApplyLock(field) {
 
 // Lock a field on Enter key in HUD input
 function initHUD() {
-  ['hudLen','hudAng','hudX','hudY'].forEach(id => {
+  // Default wall thickness
+  document.getElementById('hudThk').value = 300;
+  ['hudLen','hudAng','hudX','hudY','hudRad','hudThk'].forEach(id => {
     const el = document.getElementById(id);
     const field = id.replace('hud','').toLowerCase();
     el.addEventListener('keydown', e => {
@@ -2018,6 +2038,12 @@ function hudGetConstrainedPoint(raw) {
     const ang = _hudLocked.ang != null ? _hudLocked.ang * Math.PI / 180 : curAng;
     p.x = _drawStart.x + len * Math.cos(ang);
     p.y = _drawStart.y - len * Math.sin(ang);
+  }
+  if (_drawStart && _hudLocked.rad != null && _activeTool === 'circle') {
+    const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+    const curLen = Math.sqrt(dx*dx + dy*dy) || 1;
+    p.x = _drawStart.x + (dx / curLen) * _hudLocked.rad;
+    p.y = _drawStart.y + (dy / curLen) * _hudLocked.rad;
   }
   return p;
 }
