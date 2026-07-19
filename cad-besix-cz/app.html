@@ -1450,13 +1450,13 @@ function initCAD() {
       drawGrid();
     });
 
-    // Infinite grid — drawn inside renderBackground (after fill, before any objects).
-    const _origRenderBg = canvas.renderBackground.bind(canvas);
-    canvas.renderBackground = function(ctx, vpt) {
-      _origRenderBg(ctx, vpt);
+    // Infinite grid — drawn in _renderBackground (Fabric.js 5.x private method,
+    // called after backgroundColor fill but before objects).
+    const _origRenderBg = canvas._renderBackground.bind(canvas);
+    canvas._renderBackground = function(ctx) {
+      _origRenderBg(ctx);
       if (!CAD.gridVisible) return;
-      // Use passed vpt or fall back to canvas.viewportTransform
-      const _v = vpt || canvas.viewportTransform;
+      const _v = canvas.viewportTransform;
       const zoom = _v[0], panX = _v[4], panY = _v[5];
       const cw = canvas.width, ch = canvas.height;
       if (!cw || !ch) return;
@@ -1469,9 +1469,7 @@ function initCAD() {
       const endY   = (ch - panY) / zoom;
 
       ctx.save();
-      const dpr = window.devicePixelRatio || 1;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
+      // ctx is already in CSS-pixel space (Fabric.js applied DPR scale at init)
       for (let wx = startX; wx <= endX + step; wx += step) {
         const sx = wx * zoom + panX;
         if (sx < -1 || sx > cw + 1) continue;
