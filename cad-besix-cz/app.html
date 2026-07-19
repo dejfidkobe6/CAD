@@ -319,8 +319,8 @@ body {
   background: var(--cad-crosshair); z-index: 5;
   box-shadow: 0 0 0 0.5px rgba(0,0,0,0.4);
 }
-#crosshairH { height: 1.5px; width: 100%; left: 0; }
-#crosshairV { width: 1.5px; height: 100%; top: 0; }
+#crosshairH { height: 1.5px; width: 100%; left: 0; top: 50%; }
+#crosshairV { width: 1.5px; height: 100%; top: 0; left: 50%; }
 /* Cursor center dot — shows active drawing position */
 #cursorDot {
   position: absolute; pointer-events: none;
@@ -331,6 +331,7 @@ body {
   transform: translate(-50%, -50%);
   z-index: 6;
   display: none;
+  top: 50%; left: 50%;
 }
 
 /* Snap indicator */
@@ -3772,15 +3773,13 @@ function initTouchHandlers() {
   const wrap = document.getElementById('canvasWrap');
   let isPinching = false;
   let pinchData = null;
-  let panData = null;
-  let _selectHitTarget = false; // true when touchstart hit a canvas object in select mode
+  let drawPanData = null; // { startX, startY, startTime, vx, vy, moved }
 
   // touch-action:none prevents browser from eating gestures before JS sees them
   [canvas.wrapperEl, canvas.upperCanvasEl, canvas.lowerCanvasEl].forEach(function(el) {
     if (el) el.style.touchAction = 'none';
   });
 
-  // If canvas was somehow initialised at 0×0 (layout not ready), fix it now.
   function ensureCanvasSized() {
     if (canvas.width < 10 || canvas.height < 10) {
       const w = wrap.clientWidth || window.innerWidth;
@@ -3794,10 +3793,6 @@ function initTouchHandlers() {
     }
   }
 
-  // Convert client coords → Fabric.js canvas coords (handles zoom + pan).
-  // Uses canvas.wrapperEl bounds; falls back to canvasWrap if wrapperEl is 0×0.
-  // Result is passed as event._point so getPointer() returns it without calling
-  // canvas.getPointer() (which requires canvas._offset to be correct).
   function toCanvasPoint(clientX, clientY) {
     const el = canvas.wrapperEl || wrap;
     const b = el.getBoundingClientRect();
@@ -3810,37 +3805,24 @@ function initTouchHandlers() {
       fabric.util.invertTransform(canvas.viewportTransform));
   }
 
-  function makeFakeEvent(touch, isTouchEnd) {
-    return {
-      clientX: touch.clientX, clientY: touch.clientY,
-      button: 0,
-      _rawPoint: toCanvasPoint(touch.clientX, touch.clientY),
-      _isTouchEnd: !!isTouchEnd,
-    };
+  // Returns canvas world coords at the exact center of the viewport — the
+  // static cursor position in Dalux-style drawing mode.
+  function getCenterPoint() {
+    const rect = wrap.getBoundingClientRect();
+    return toCanvasPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
   }
 
   // ── ALL LISTENERS ON #canvasWrap (CAPTURE) ─────────────────────────────────
-  // Using canvasWrap (not canvas.wrapperEl) ensures we catch touches even when
-  // the Fabric.js canvas elements are 0×0 (bad layout timing at init).
-
-  // Helper: update crosshair + cursor dot from client coords
-  function touchMoveCrosshair(clientX, clientY) {
-    const r = wrap.getBoundingClientRect();
-    const x = clientX - r.left, y = clientY - r.top;
-    const chH = document.getElementById('crosshairH');
-    const chV = document.getElementById('crosshairV');
-    const cd  = document.getElementById('cursorDot');
-    if (chH) chH.style.top  = y + 'px';
-    if (chV) chV.style.left = x + 'px';
-    if (cd)  { cd.style.left = x + 'px'; cd.style.top = y + 'px'; cd.style.display = 'block'; }
-  }
 
   wrap.addEventListener('touchstart', function(e) {
     ensureCanvasSized();
 
+    // ── 2-finger: pinch zoom ──────────────────────────────────────────────────
     if (e.touches.length === 2) {
       e.preventDefault();
-      isPinching = true; panData = null;
+      e.stopImmediatePropagation();
+      isPinching = true;
+      drawPanData = null;
       const t1 = e.touches[0], t2 = e.touches[1];
       const rect = wrap.getBoundingClientRect();
       const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
@@ -3854,34 +3836,28 @@ function initTouchHandlers() {
     }
     if (e.touches.length !== 1 || isPinching) return;
 
-    if (_activeTool === 'select') {
-      const t = e.touches[0];
-      const target = canvas.findTarget({ clientX: t.clientX, clientY: t.clientY }, false);
-      if (target) {
-        _selectHitTarget = true;
-        panData = null;
-        return; // Fabric.js handles selection/drag
-      }
-      _selectHitTarget = false;
-      panData = { x: t.clientX, y: t.clientY,
-        vx: canvas.viewportTransform[4], vy: canvas.viewportTransform[5] };
-      e.stopImmediatePropagation();
-      return;
-    }
+    // ── SELECT: let Fabric.js handle rubber-band + object drag natively ───────
+    if (_activeTool === 'select') return;
 
-    // Drawing tool: update crosshair to show where finger is.
-    // Point is NOT placed here — it's placed on touchend (lift).
+    // ── Drawing tools: Dalux model — drag pans canvas, tap places at center ──
     e.preventDefault();
     e.stopImmediatePropagation();
     const t = e.touches[0];
-    touchMoveCrosshair(t.clientX, t.clientY);
-    // If already drawing, update live preview immediately on touch
+    const vpt = canvas.viewportTransform;
+    drawPanData = {
+      startX: t.clientX, startY: t.clientY,
+      startTime: Date.now(),
+      vx: vpt[4], vy: vpt[5],
+      moved: false,
+    };
+    // Update live preview to center immediately if already drawing
     if (_isDrawing) {
-      handleToolMouseMove({ e: makeFakeEvent(t) });
+      handleToolMouseMove({ e: { _rawPoint: getCenterPoint(), button: 0 } });
     }
   }, { capture: true, passive: false });
 
   wrap.addEventListener('touchmove', function(e) {
+    // ── 2-finger: pinch zoom ──────────────────────────────────────────────────
     if (e.touches.length === 2 && isPinching && pinchData) {
       e.preventDefault();
       const t1 = e.touches[0], t2 = e.touches[1];
@@ -3904,28 +3880,27 @@ function initTouchHandlers() {
     }
     if (e.touches.length !== 1 || isPinching) return;
 
-    if (_activeTool === 'select') {
-      if (_selectHitTarget) { e.preventDefault(); return; }
-      if (!panData) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      const t = e.touches[0];
-      const dx = t.clientX - panData.x, dy = t.clientY - panData.y;
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-        const vpt = canvas.viewportTransform;
-        vpt[4] = panData.vx + dx;
-        vpt[5] = panData.vy + dy;
-        canvas.requestRenderAll();
-      }
-      return;
-    }
+    // ── SELECT: let Fabric.js handle natively ────────────────────────────────
+    if (_activeTool === 'select') return;
 
-    // Drawing tool: move crosshair + show live preview
+    // ── Drawing: pan canvas, preview shape from _drawStart → center ──────────
+    if (!drawPanData) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    const mt = e.touches[0];
-    touchMoveCrosshair(mt.clientX, mt.clientY);
-    handleToolMouseMove({ e: makeFakeEvent(mt) });
+    const t = e.touches[0];
+    const dx = t.clientX - drawPanData.startX;
+    const dy = t.clientY - drawPanData.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      drawPanData.moved = true;
+      const vpt = canvas.viewportTransform;
+      vpt[4] = drawPanData.vx + dx;
+      vpt[5] = drawPanData.vy + dy;
+      if (_isDrawing) {
+        handleToolMouseMove({ e: { _rawPoint: getCenterPoint(), button: 0 } });
+      } else {
+        canvas.requestRenderAll();
+      }
+    }
   }, { capture: true, passive: false });
 
   wrap.addEventListener('touchend', function(e) {
@@ -3933,20 +3908,18 @@ function initTouchHandlers() {
       if (e.touches.length < 2) { isPinching = false; pinchData = null; }
       return;
     }
-    if (_activeTool === 'select') {
-      const wasHit = _selectHitTarget;
-      _selectHitTarget = false;
-      panData = null;
-      if (!wasHit) e.stopImmediatePropagation();
-      return;
-    }
-    // Drawing tool: lifting finger = PLACE POINT at cursor position.
-    // This lets user drag to exact snapped position then lift to confirm.
-    panData = null;
-    const t = e.changedTouches[0];
-    if (t) {
-      touchMoveCrosshair(t.clientX, t.clientY);
-      handleToolMouseDown({ e: makeFakeEvent(t) });
+
+    // ── SELECT: let Fabric.js handle natively ────────────────────────────────
+    if (_activeTool === 'select') return;
+
+    // ── Drawing: tap (no pan) → place point at static center cursor ──────────
+    if (!drawPanData) return;
+    const wasMoved = drawPanData.moved;
+    const elapsed  = Date.now() - drawPanData.startTime;
+    drawPanData = null;
+
+    if (!wasMoved && elapsed < 350) {
+      handleToolMouseDown({ e: { _rawPoint: getCenterPoint(), button: 0 } });
     }
   }, { capture: true });
 }
