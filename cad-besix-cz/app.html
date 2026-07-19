@@ -1619,12 +1619,22 @@ function setupCanvasEvents() {
       _panLast = { x: eX, y: eY };
       return;
     }
-    // Update snap marker on hover even when not drawing
+    // Update snap marker on hover (before AND during drawing)
     if (!_isPanning && CAD.snapEnabled) {
       const raw = canvas.getPointer(opt.e);
       const snap = findObjSnap(raw.x, raw.y);
-      if (snap) showSnapMarker(snap.x, snap.y, snap.snapType);
-      else hideSnapMarker();
+      if (snap) {
+        showSnapMarker(snap.x, snap.y, snap.snapType);
+        // Lock crosshair to snap point even before first click
+        const vpt = canvas.viewportTransform;
+        const sx = snap.x * vpt[0] + vpt[4];
+        const sy = snap.y * vpt[3] + vpt[5];
+        chH.style.top  = sy + 'px';
+        chV.style.left = sx + 'px';
+        if (cursorDot) { cursorDot.style.left = sx + 'px'; cursorDot.style.top = sy + 'px'; }
+      } else {
+        hideSnapMarker();
+      }
     }
     handleToolMouseMove(opt);
   });
@@ -2777,10 +2787,11 @@ function doRedo() {
 
 // ── ACTIONS ────────────────────────────────────────────────────────────────
 function deleteSelected() {
-  const active = canvas.getActiveObjects();
+  const active = canvas.getActiveObjects().slice(); // copy before discarding
   if (active.length === 0) return;
+  canvas.discardActiveObject(); // release ActiveSelection so objects are back in canvas space
   active.forEach(o => canvas.remove(o));
-  canvas.discardActiveObject().renderAll();
+  canvas.renderAll();
   saveUndoState();
   toast(`Smazáno ${active.length} objektů`);
 }
@@ -3881,7 +3892,13 @@ function initTouchHandlers() {
       vx: vpt[4], vy: vpt[5],
       moved: false,
     };
-    // Update live preview to center immediately if already drawing
+    // Evaluate snap at center immediately (before any movement)
+    if (CAD.snapEnabled) {
+      const cp = getCenterPoint();
+      const sn = findObjSnap(cp.x, cp.y);
+      if (sn) showSnapMarker(sn.x, sn.y, sn.snapType);
+      else hideSnapMarker();
+    }
     if (_isDrawing) {
       handleToolMouseMove({ e: { _rawPoint: getCenterPoint(), button: 0 } });
     }
@@ -3930,6 +3947,13 @@ function initTouchHandlers() {
         handleToolMouseMove({ e: { _rawPoint: getCenterPoint(), button: 0 } });
       } else {
         canvas.requestRenderAll();
+        // Update snap at new center even before first click
+        if (CAD.snapEnabled) {
+          const cp = getCenterPoint();
+          const sn = findObjSnap(cp.x, cp.y);
+          if (sn) showSnapMarker(sn.x, sn.y, sn.snapType);
+          else hideSnapMarker();
+        }
       }
     }
   }, { capture: true, passive: false });
@@ -3951,6 +3975,7 @@ function initTouchHandlers() {
 
     if (!wasMoved && elapsed < 350) {
       handleToolMouseDown({ e: { _rawPoint: getCenterPoint(), button: 0 } });
+      hideSnapMarker(); // clear after placing so user sees the click registered
     }
   }, { capture: true });
 }
