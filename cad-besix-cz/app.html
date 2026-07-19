@@ -34,8 +34,8 @@
   --blue: #007aff;
 
   --cad-bg: #4A5340;
-  --cad-grid: rgba(255,255,255,0.08);
-  --cad-grid-major: rgba(255,255,255,0.14);
+  --cad-grid: rgba(201,168,76,0.18);
+  --cad-grid-major: rgba(201,168,76,0.45);
   --cad-snap: #ffee44;
   --cad-crosshair: rgba(255,255,255,0.35);
 
@@ -1353,8 +1353,8 @@ function drawGrid() {
   for (let x = 0; x < w; x += step) {
     const isMajor = Math.round(x / step) % 5 === 0;
     const line = new fabric.Line([x, 0, x, h], {
-      stroke: isMajor ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
-      strokeWidth: 0.5,
+      stroke: isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)',
+      strokeWidth: isMajor ? 0.7 : 0.4,
       selectable: false, evented: false,
       excludeFromExport: true,
     });
@@ -1365,8 +1365,8 @@ function drawGrid() {
   for (let y = 0; y < h; y += step) {
     const isMajor = Math.round(y / step) % 5 === 0;
     const line = new fabric.Line([0, y, w, y], {
-      stroke: isMajor ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
-      strokeWidth: 0.5,
+      stroke: isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)',
+      strokeWidth: isMajor ? 0.7 : 0.4,
       selectable: false, evented: false,
       excludeFromExport: true,
     });
