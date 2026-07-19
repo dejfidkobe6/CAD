@@ -3708,48 +3708,104 @@ function toggleMobilePanel(force) {
 
 function initTouchHandlers() {
   if (!canvas) return;
+  const el = canvas.wrapperEl;
+  const wrap = document.getElementById('canvasWrap');
   let isPinching = false;
   let pinchData = null;
-  const el = canvas.wrapperEl;
+  let panData = null;
 
-  el.addEventListener('touchstart', e => {
+  // Force touch-action:none on all canvas elements so browser gestures don't intercept
+  [el, canvas.upperCanvasEl, canvas.lowerCanvasEl].forEach(function(elem) {
+    if (elem) elem.style.touchAction = 'none';
+  });
+
+  // Build a synthetic event that canvas.getPointer() will process correctly:
+  // target=upperCanvasEl takes the simple branch (pointer = {clientX, clientY})
+  // then Fabric.js subtracts _offset and applies viewport inverse transform.
+  function makeFakeEvent(touch) {
+    return { clientX: touch.clientX, clientY: touch.clientY, button: 0, target: canvas.upperCanvasEl };
+  }
+
+  // ── SINGLE-FINGER DRAWING (capture phase — fires before Fabric.js) ─────────
+  el.addEventListener('touchstart', function(e) {
+    if (e.touches.length !== 1 || isPinching) return;
+    if (_activeTool === 'select') {
+      // In select mode track for viewport pan (Fabric.js handles object tap via its own events)
+      const t = e.touches[0];
+      panData = { x: t.clientX, y: t.clientY, vx: canvas.viewportTransform[4], vy: canvas.viewportTransform[5], moved: false };
+      return;
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    handleToolMouseDown({ e: makeFakeEvent(e.touches[0]) });
+  }, { capture: true, passive: false });
+
+  el.addEventListener('touchmove', function(e) {
+    if (e.touches.length !== 1 || isPinching) return;
+    if (_activeTool === 'select') {
+      if (!panData) return;
+      const t = e.touches[0];
+      const dx = t.clientX - panData.x;
+      const dy = t.clientY - panData.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        panData.moved = true;
+        const vpt = canvas.viewportTransform;
+        vpt[4] = panData.vx + dx;
+        vpt[5] = panData.vy + dy;
+        canvas.requestRenderAll();
+      }
+      return;
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    handleToolMouseMove({ e: makeFakeEvent(e.touches[0]) });
+  }, { capture: true, passive: false });
+
+  el.addEventListener('touchend', function(e) {
+    if (isPinching) return;
+    if (_activeTool === 'select') {
+      panData = null;
+      return;
+    }
+    e.stopImmediatePropagation();
+    const t = e.changedTouches[0];
+    if (t) handleToolMouseUp({ e: makeFakeEvent(t) });
+  }, { capture: true });
+
+  // ── 2-FINGER PINCH ZOOM + PAN ──────────────────────────────────────────────
+  wrap.addEventListener('touchstart', function(e) {
     if (e.touches.length === 2) {
       e.preventDefault();
       isPinching = true;
+      panData = null;
       const t1 = e.touches[0], t2 = e.touches[1];
-      const rect = el.getBoundingClientRect();
+      const rect = wrap.getBoundingClientRect();
       const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
       const midY = (t1.clientY + t2.clientY) / 2 - rect.top;
       pinchData = {
         startDist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
         startZoom: canvas.getZoom(),
-        midX, midY,
-        lastMidX: midX, lastMidY: midY,
+        midX, midY, lastMidX: midX, lastMidY: midY,
       };
-    } else {
+    } else if (e.touches.length < 2) {
       isPinching = false;
     }
   }, { passive: false });
 
-  el.addEventListener('touchmove', e => {
+  wrap.addEventListener('touchmove', function(e) {
     if (e.touches.length === 2 && isPinching && pinchData) {
       e.preventDefault();
       const t1 = e.touches[0], t2 = e.touches[1];
-      const rect = el.getBoundingClientRect();
+      const rect = wrap.getBoundingClientRect();
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
       const midY = (t1.clientY + t2.clientY) / 2 - rect.top;
-
-      // Pinch zoom around initial midpoint
       const newZoom = Math.min(Math.max(pinchData.startZoom * (dist / pinchData.startDist), 0.05), 20);
       canvas.zoomToPoint({ x: pinchData.midX, y: pinchData.midY }, newZoom);
-
-      // 2-finger pan
       const vpt = canvas.viewportTransform;
       vpt[4] += midX - pinchData.lastMidX;
       vpt[5] += midY - pinchData.lastMidY;
       canvas.requestRenderAll();
-
       pinchData.lastMidX = midX;
       pinchData.lastMidY = midY;
       CAD.zoom = newZoom;
@@ -3758,7 +3814,7 @@ function initTouchHandlers() {
     }
   }, { passive: false });
 
-  el.addEventListener('touchend', e => {
+  wrap.addEventListener('touchend', function(e) {
     if (e.touches.length < 2) { isPinching = false; pinchData = null; }
   }, { passive: true });
 }
