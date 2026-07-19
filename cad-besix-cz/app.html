@@ -1425,7 +1425,7 @@ function setTool(tool) {
     trim: 'Trim', offset: 'Offset', calibrate: 'Kalibrace měřítka'
   };
   document.getElementById('statusTool').textContent = names[tool] || tool;
-  wrap.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+  document.getElementById('canvasWrap').style.cursor = tool === 'select' ? 'default' : 'crosshair';
   // Sync mobile bar highlight — explicit remove+add for reliability
   document.querySelectorAll('#mobileBar .mob-btn').forEach(b => b.classList.remove('active'));
   const mobBtn = document.querySelector(`#mobileBar .mob-btn[data-tool="${tool}"]`);
@@ -2569,12 +2569,11 @@ async function importPDFVectors(file) {
   }
 }
 
-// Basic DXF parser (lines, circles, arcs, text)
+// DXF parser — LINE, LWPOLYLINE, POLYLINE/VERTEX, CIRCLE, ARC, TEXT, MTEXT
 function parseDXF(text) {
   const lines = text.split('\n').map(l => l.trim());
   const entities = [];
   let i = 0;
-  // Find ENTITIES section
   while (i < lines.length && lines[i] !== 'ENTITIES') i++;
   i++;
 
@@ -2583,40 +2582,95 @@ function parseDXF(text) {
     const code = parseInt(lines[i]);
     const value = lines[i + 1];
     i += 2;
+    if (isNaN(code)) continue;
 
     if (code === 0) {
       if (entity) entities.push(entity);
-      if (value === 'ENDSEC') break;
-      entity = { type: value, props: {} };
+      if (value === 'ENDSEC' || value === 'EOF') break;
+      // VERTEX is part of old-style POLYLINE — skip as standalone entity
+      entity = { type: value, props: {}, vx: [], vy: [] };
     } else if (entity) {
-      entity.props[code] = isNaN(+value) ? value : +value;
+      const num = parseFloat(value);
+      const isNum = !isNaN(num);
+      // Accumulate repeated vertex coordinates for LWPOLYLINE / POLYLINE
+      if (code === 10)      { entity.vx.push(isNum ? num : 0); entity.props[10] = entity.vx[0]; }
+      else if (code === 20) { entity.vy.push(isNum ? num : 0); entity.props[20] = entity.vy[0]; }
+      else entity.props[code] = isNum ? num : value;
     }
   }
   if (entity) entities.push(entity);
 
   const layer = getActiveLayer();
+  let added = 0;
   entities.forEach(e => {
     const p = e.props;
+    const x = v => v || 0;
     switch (e.type) {
       case 'LINE':
-        canvas.add(new fabric.Line([p[10]||0, -(p[20]||0), p[11]||0, -(p[21]||0)], {
+        canvas.add(new fabric.Line([x(p[10]), -x(p[20]), x(p[11]), -x(p[21])], {
           stroke: layer.color, strokeWidth: 1, _cadLayer: layer.id,
         }));
+        added++;
         break;
+
+      case 'LWPOLYLINE': {
+        if (e.vx.length < 2) break;
+        const pts = e.vx.map((xx, k) => ({ x: xx, y: -e.vy[k] }));
+        const closed = (p[70] & 1) === 1;
+        if (closed && pts.length > 2) {
+          canvas.add(new fabric.Polygon(pts, {
+            fill: 'transparent', stroke: layer.color, strokeWidth: 1,
+            _cadLayer: layer.id,
+          }));
+        } else {
+          canvas.add(new fabric.Polyline(pts, {
+            fill: 'transparent', stroke: layer.color, strokeWidth: 1,
+            _cadLayer: layer.id,
+          }));
+        }
+        added++;
+        break;
+      }
+
       case 'CIRCLE':
         canvas.add(new fabric.Circle({
-          left: (p[10]||0), top: -(p[20]||0), radius: p[40]||10,
+          left: x(p[10]), top: -x(p[20]), radius: x(p[40]) || 10,
           fill: 'transparent', stroke: layer.color, strokeWidth: 1,
           originX: 'center', originY: 'center', _cadLayer: layer.id,
         }));
+        added++;
         break;
+
+      case 'ARC': {
+        const cx = x(p[10]), cy = -x(p[20]), r = x(p[40]) || 10;
+        const startA = (p[50] || 0) * Math.PI / 180;
+        const endA   = (p[51] || 90) * Math.PI / 180;
+        // Build arc path
+        const x1 = cx + r * Math.cos(-startA);
+        const y1 = cy + r * Math.sin(-startA);
+        const x2 = cx + r * Math.cos(-endA);
+        const y2 = cy + r * Math.sin(-endA);
+        let sweep = (p[51] - p[50] + 360) % 360;
+        const large = sweep > 180 ? 1 : 0;
+        canvas.add(new fabric.Path(
+          `M ${x1} ${y1} A ${r} ${r} 0 ${large} 0 ${x2} ${y2}`, {
+          fill: 'transparent', stroke: layer.color, strokeWidth: 1,
+          _cadLayer: layer.id,
+        }));
+        added++;
+        break;
+      }
+
       case 'TEXT':
       case 'MTEXT':
-        canvas.add(new fabric.Text(p[1] || '', {
-          left: (p[10]||0), top: -(p[20]||0),
-          fontSize: (p[40] || 10), fill: layer.color,
-          fontFamily: 'JetBrains Mono', _cadLayer: layer.id,
-        }));
+        if (p[1]) {
+          canvas.add(new fabric.Text(String(p[1]), {
+            left: x(p[10]), top: -x(p[20]),
+            fontSize: x(p[40]) || 10, fill: layer.color,
+            fontFamily: 'JetBrains Mono', _cadLayer: layer.id,
+          }));
+          added++;
+        }
         break;
     }
   });
@@ -2624,7 +2678,7 @@ function parseDXF(text) {
   canvas.renderAll();
   zoomExtents();
   saveUndoState();
-  toast(`DXF: ${entities.length} entit — pokud nic nevidíte, stiskněte tlačítko Zoom`);
+  toast(added > 0 ? `DXF: importováno ${added} objektů` : `DXF: žádné podporované entity (${entities.length} nalezeno)`);
 }
 
 // ── EXPORT PDF ─────────────────────────────────────────────────────────────
