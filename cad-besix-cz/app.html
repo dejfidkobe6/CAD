@@ -7,6 +7,22 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>BeSix CAD</title>
+<!-- PWA -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#C9A84C">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CAD">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+<link rel="shortcut icon" href="/favicon.ico">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -17,14 +33,15 @@
    Design: Industrial dark, matching board.besix.cz palette
    ═══════════════════════════════════════════════════════════════════════════ */
 :root {
-  --bg: #1e2710;
-  --surface: #1a2a0e;
+  /* BeSix brand palette */
+  --bg: #2c3326;
+  --surface: #252e20;
   --surface2: rgba(255,255,255,0.07);
   --surface3: rgba(255,255,255,0.11);
   --border: rgba(255,255,255,0.1);
   --border2: rgba(255,255,255,0.16);
-  --accent: #c9922a;
-  --accent2: #d4a035;
+  --accent: #C9A84C;
+  --accent2: #d4b45a;
   --text: rgba(255,255,255,0.88);
   --text2: rgba(255,255,255,0.5);
   --muted: rgba(255,255,255,0.3);
@@ -32,14 +49,14 @@
   --green: #34c759;
   --blue: #007aff;
 
-  --cad-bg: #1a1a2e;
-  --cad-grid: rgba(255,255,255,0.05);
-  --cad-grid-major: rgba(255,255,255,0.09);
-  --cad-snap: #00ff88;
-  --cad-crosshair: rgba(255,255,255,0.4);
+  --cad-bg: #4A5340;
+  --cad-grid: rgba(201,168,76,0.18);
+  --cad-grid-major: rgba(201,168,76,0.45);
+  --cad-snap: #ffee44;
+  --cad-crosshair: rgba(255,255,255,0.35);
 
-  --toolbar-bg: #0f1508;
-  --panel-bg: #151d0b;
+  --toolbar-bg: #1e2419;
+  --panel-bg: #222918;
   --panel-w: 220px;
   --toolbar-w: 44px;
   --topbar-h: 40px;
@@ -552,6 +569,40 @@ body {
   :root { --panel-w: 180px; }
 }
 
+/* ── Drawing HUD ── */
+#drawHUD {
+  display: none;
+  position: fixed;
+  right: 12px; bottom: 70px;
+  background: rgba(30,36,25,0.96);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 8px 10px;
+  z-index: 250;
+  backdrop-filter: blur(8px);
+  min-width: 140px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+#drawHUD.visible { display: block; }
+.hud-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 0;
+}
+.hud-label {
+  color: var(--text2); font-size: 10px; font-weight: 700;
+  width: 18px; text-align: right; letter-spacing: .05em;
+}
+.hud-input {
+  flex: 1; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  padding: 3px 6px; width: 80px;
+  text-align: right;
+}
+.hud-input:focus { outline: none; border-color: var(--accent); color: #fff; }
+.hud-input.locked { border-color: var(--accent); color: var(--accent); }
+.hud-sep { height: 1px; background: var(--border); margin: 4px 0; }
+
 /* ── Mobile bottom toolbar ── */
 #mobileBar {
   display: none;
@@ -584,7 +635,7 @@ body {
   -webkit-user-select: none; user-select: none;
 }
 .mob-btn:active { background: var(--surface2); }
-.mob-btn.active { color: var(--accent); background: rgba(200,145,42,0.12); }
+.mob-btn.active { color: var(--accent); background: rgba(200,145,42,0.22); border-top: 2px solid var(--accent); }
 .mob-btn svg { width: 20px; height: 20px; stroke-width: 1.5; flex-shrink: 0; }
 .mob-sep { flex: 0 0 1px; width: 1px; height: 28px; background: var(--border); margin: 0 3px; }
 
@@ -857,6 +908,35 @@ body {
 </div>
 
 <!-- MOBILE BOTTOM TOOLBAR -->
+<!-- DRAWING HUD -->
+<div id="drawHUD">
+  <div class="hud-row">
+    <span class="hud-label">X</span>
+    <input id="hudX" class="hud-input" type="number" step="0.1" placeholder="—" title="Souřadnice X">
+  </div>
+  <div class="hud-row">
+    <span class="hud-label">Y</span>
+    <input id="hudY" class="hud-input" type="number" step="0.1" placeholder="—" title="Souřadnice Y">
+  </div>
+  <div class="hud-sep"></div>
+  <div class="hud-row" id="hudLenRow">
+    <span class="hud-label">mm</span>
+    <input id="hudLen" class="hud-input" type="number" step="1" min="0" placeholder="délka" title="Délka (Enter = zafixovat)">
+  </div>
+  <div class="hud-row" id="hudAngRow">
+    <span class="hud-label">°</span>
+    <input id="hudAng" class="hud-input" type="number" step="1" placeholder="úhel" title="Úhel ve stupních (Enter = zafixovat)">
+  </div>
+  <div class="hud-row" id="hudRadRow">
+    <span class="hud-label">r</span>
+    <input id="hudRad" class="hud-input" type="number" step="1" min="0" placeholder="poloměr" title="Poloměr (Enter = zafixovat)">
+  </div>
+  <div class="hud-row" id="hudThkRow">
+    <span class="hud-label">t</span>
+    <input id="hudThk" class="hud-input" type="number" step="1" min="1" placeholder="tloušťka" title="Tloušťka zdi (Enter = zafixovat)">
+  </div>
+</div>
+
 <div id="mobileBar">
   <button class="mob-btn active" data-tool="select" onclick="setTool('select')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 3l14 9-7 2-3 7z"/></svg>Výběr
@@ -1009,7 +1089,7 @@ body {
 </div>
 
 <!-- Hidden file inputs -->
-<input type="file" id="importFileInput" accept=".dxf,.pdf,.dwg" style="display:none" onchange="handleImport(event)">
+<input type="file" id="importFileInput" accept=".dxf,.pdf,.dwg,.png,.jpg,.jpeg,.webp,.svg,.gif,.bmp" style="display:none" onchange="handleImport(event)">
 
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1230,7 +1310,7 @@ function initCAD() {
   canvas = new fabric.Canvas('cadCanvas', {
     width: w,
     height: h,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#4A5340',
     selection: true,
     preserveObjectStacking: true,
     fireRightClick: true,
@@ -1245,8 +1325,57 @@ function initCAD() {
     drawGrid();
   });
 
-  // Init grid
-  drawGrid();
+  // Infinite grid — drawn directly on canvas context after every render
+  canvas.on('after:render', function() {
+    if (!CAD.gridVisible) return;
+    const ctx = canvas.contextContainer;
+    const vpt = canvas.viewportTransform;
+    const zoom = vpt[0];
+    const panX = vpt[4];
+    const panY = vpt[5];
+    const cw = canvas.width;
+    const ch = canvas.height;
+    const step = CAD.gridSize;
+    if (step * zoom < 4) return; // too dense to draw
+
+    const worldLeft   = -panX / zoom;
+    const worldTop    = -panY / zoom;
+    const worldRight  = (cw - panX) / zoom;
+    const worldBottom = (ch - panY) / zoom;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // screen-space drawing
+
+    const startX = Math.floor(worldLeft  / step) * step;
+    const startY = Math.floor(worldTop   / step) * step;
+
+    for (let wx = startX; wx <= worldRight + step; wx += step) {
+      const sx = wx * zoom + panX;
+      if (sx < -1 || sx > cw + 1) continue;
+      const isMajor = Math.round(wx / step) % 5 === 0;
+      ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
+      ctx.lineWidth   = isMajor ? 0.7 : 0.4;
+      ctx.beginPath();
+      ctx.moveTo(sx + 0.5, 0);
+      ctx.lineTo(sx + 0.5, ch);
+      ctx.stroke();
+    }
+
+    for (let wy = startY; wy <= worldBottom + step; wy += step) {
+      const sy = wy * zoom + panY;
+      if (sy < -1 || sy > ch + 1) continue;
+      const isMajor = Math.round(wy / step) % 5 === 0;
+      ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
+      ctx.lineWidth   = isMajor ? 0.7 : 0.4;
+      ctx.beginPath();
+      ctx.moveTo(0, sy + 0.5);
+      ctx.lineTo(cw, sy + 0.5);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  });
+
   renderLayers();
   setupCanvasEvents();
   setupKeyboard();
@@ -1270,46 +1399,17 @@ function initCAD() {
   // Set initial date
   document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
   initTouchHandlers();
+  initHUD();
 }
 
 // ── GRID ───────────────────────────────────────────────────────────────────
 function drawGrid() {
-  // Remove old grid
-  _gridLines.forEach(l => canvas.remove(l));
+  // Remove any legacy fabric grid lines from old JSON snapshots
+  canvas.getObjects()
+    .filter(o => o.excludeFromExport)
+    .forEach(o => canvas.remove(o));
   _gridLines = [];
-  if (!CAD.gridVisible) { canvas.renderAll(); return; }
-
-  const step = CAD.gridSize * (CAD.zoom || 1) * 0.5; // px per grid cell (approx)
-  if (step < 8) { canvas.renderAll(); return; } // too dense
-
-  const w = canvas.width;
-  const h = canvas.height;
-
-  for (let x = 0; x < w; x += step) {
-    const isMajor = Math.round(x / step) % 5 === 0;
-    const line = new fabric.Line([x, 0, x, h], {
-      stroke: isMajor ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
-      strokeWidth: 0.5,
-      selectable: false, evented: false,
-      excludeFromExport: true,
-    });
-    _gridLines.push(line);
-    canvas.add(line);
-    canvas.sendToBack(line);
-  }
-  for (let y = 0; y < h; y += step) {
-    const isMajor = Math.round(y / step) % 5 === 0;
-    const line = new fabric.Line([0, y, w, y], {
-      stroke: isMajor ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
-      strokeWidth: 0.5,
-      selectable: false, evented: false,
-      excludeFromExport: true,
-    });
-    _gridLines.push(line);
-    canvas.add(line);
-    canvas.sendToBack(line);
-  }
-  canvas.renderAll();
+  if (canvas) canvas.requestRenderAll();
 }
 
 // ── CANVAS EVENTS ──────────────────────────────────────────────────────────
@@ -1364,13 +1464,15 @@ function setupCanvasEvents() {
   });
   canvas.on('mouse:move', (opt) => {
     if (_isPanning && _panLast) {
-      const dx = opt.e.clientX - _panLast.x;
-      const dy = opt.e.clientY - _panLast.y;
+      const eX = opt.e.clientX ?? (opt.e.touches && opt.e.touches[0] ? opt.e.touches[0].clientX : _panLast.x);
+      const eY = opt.e.clientY ?? (opt.e.touches && opt.e.touches[0] ? opt.e.touches[0].clientY : _panLast.y);
+      const dx = eX - _panLast.x;
+      const dy = eY - _panLast.y;
       const vpt = canvas.viewportTransform;
       vpt[4] += dx;
       vpt[5] += dy;
       canvas.requestRenderAll();
-      _panLast = { x: opt.e.clientX, y: opt.e.clientY };
+      _panLast = { x: eX, y: eY };
       return;
     }
     // Update snap marker on hover even when not drawing
@@ -1423,10 +1525,25 @@ function setTool(tool) {
     trim: 'Trim', offset: 'Offset', calibrate: 'Kalibrace měřítka'
   };
   document.getElementById('statusTool').textContent = names[tool] || tool;
-  wrap.style.cursor = tool === 'select' ? 'default' : 'crosshair';
-  // Sync mobile bar highlight
-  document.querySelectorAll('#mobileBar .mob-btn[data-tool]').forEach(b =>
-    b.classList.toggle('active', b.dataset.tool === tool));
+  document.getElementById('canvasWrap').style.cursor = tool === 'select' ? 'default' : 'crosshair';
+  // Sync mobile bar highlight — explicit remove+add for reliability
+  document.querySelectorAll('#mobileBar .mob-btn').forEach(b => b.classList.remove('active'));
+  const mobBtn = document.querySelector(`#mobileBar .mob-btn[data-tool="${tool}"]`);
+  if (mobBtn) mobBtn.classList.add('active');
+  // Show/hide drawing HUD
+  const drawingTools = ['line','rect','circle','polyline','wall','dimension'];
+  const hud = document.getElementById('drawHUD');
+  hud.classList.toggle('visible', drawingTools.includes(tool));
+  const hasLenAng = ['line','wall','dimension'].includes(tool);
+  document.getElementById('hudLenRow').style.display = hasLenAng ? '' : 'none';
+  document.getElementById('hudAngRow').style.display = hasLenAng ? '' : 'none';
+  document.getElementById('hudRadRow').style.display = tool === 'circle' ? '' : 'none';
+  document.getElementById('hudThkRow').style.display = tool === 'wall' ? '' : 'none';
+  // Reset locked values when tool changes (keep thk)
+  const prevThk = _hudLocked.thk;
+  _hudLocked = {};
+  if (prevThk != null) _hudLocked.thk = prevThk;
+  document.querySelectorAll('.hud-input:not(#hudThk)').forEach(i => i.classList.remove('locked'));
 }
 
 function getActiveLayer() {
@@ -1583,11 +1700,16 @@ function getPointer(opt) {
     if (dx > dy) p.y = _drawStart.y;
     else p.x = _drawStart.x;
   }
+  // Apply HUD constraints (locked length/angle/x/y)
+  if (Object.keys(_hudLocked).length) p = hudGetConstrainedPoint(p);
+  // Update HUD display
+  hudUpdate(p);
   return p;
 }
 
 function handleToolMouseDown(opt) {
-  if (opt.e.button !== 0) return;
+  // Allow touch events (button is undefined on TouchEvent)
+  if (opt.e.button != null && opt.e.button !== 0) return;
   const p = getPointer(opt);
   const layer = getActiveLayer();
 
@@ -1674,7 +1796,8 @@ function handleToolMouseDown(opt) {
       if (!_isDrawing) {
         _isDrawing = true;
         _drawStart = p;
-        const thickness = 300 * 0.5; // 300mm at scale
+        const thkVal = _hudLocked.thk != null ? _hudLocked.thk : (parseFloat(document.getElementById('hudThk').value) || 300);
+        const thickness = thkVal * 0.5;
         _tempShape = new fabric.Rect({
           left: p.x, top: p.y - thickness / 2,
           width: 0, height: thickness,
@@ -1883,6 +2006,81 @@ function setupKeyboard() {
     else if (key === '+' || key === '=') { zoomIn(); }
     else if (key === '-') { zoomOut(); }
   });
+}
+
+// ── DRAWING HUD ────────────────────────────────────────────────────────────
+let _hudLocked = {}; // { len: number, ang: number, x: number, y: number }
+
+function hudUpdate(p) {
+  const hud = document.getElementById('drawHUD');
+  if (!hud.classList.contains('visible')) return;
+  const xEl = document.getElementById('hudX');
+  const yEl = document.getElementById('hudY');
+  if (!_hudLocked.x) xEl.value = Math.round(p.x * 10) / 10;
+  if (!_hudLocked.y) yEl.value = Math.round(-p.y * 10) / 10; // flip Y for display
+
+  if (_drawStart && ['line','wall','dimension'].includes(_activeTool)) {
+    const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const ang = Math.round(Math.atan2(-dy, dx) * 180 / Math.PI * 10) / 10;
+    if (!_hudLocked.len) document.getElementById('hudLen').value = Math.round(len * 10) / 10;
+    if (!_hudLocked.ang) document.getElementById('hudAng').value = ang;
+  }
+  if (_drawStart && _activeTool === 'circle') {
+    const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+    const rad = Math.sqrt(dx*dx + dy*dy);
+    if (!_hudLocked.rad) document.getElementById('hudRad').value = Math.round(rad * 10) / 10;
+  }
+}
+
+function hudApplyLock(field) {
+  const el = document.getElementById('hud' + field[0].toUpperCase() + field.slice(1));
+  const val = parseFloat(el.value);
+  if (isNaN(val)) { delete _hudLocked[field]; el.classList.remove('locked'); return; }
+  _hudLocked[field] = val;
+  el.classList.add('locked');
+}
+
+// Lock a field on Enter key in HUD input
+function initHUD() {
+  // Default wall thickness
+  document.getElementById('hudThk').value = 300;
+  ['hudLen','hudAng','hudX','hudY','hudRad','hudThk'].forEach(id => {
+    const el = document.getElementById(id);
+    const field = id.replace('hud','').toLowerCase();
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); hudApplyLock(field); el.blur(); }
+      if (e.key === 'Escape') { delete _hudLocked[field]; el.classList.remove('locked'); el.blur(); }
+      e.stopPropagation(); // prevent tool shortcuts while typing
+    });
+    el.addEventListener('dblclick', () => {
+      delete _hudLocked[field]; el.classList.remove('locked');
+    });
+  });
+}
+
+function hudGetConstrainedPoint(raw) {
+  let p = { ...raw };
+  // Apply locked X/Y
+  if (_hudLocked.x != null) p.x = _hudLocked.x;
+  if (_hudLocked.y != null) p.y = -_hudLocked.y; // flip back
+  // Apply locked length/angle from start point
+  if (_drawStart && (_hudLocked.len != null || _hudLocked.ang != null) && ['line','wall','dimension'].includes(_activeTool)) {
+    const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+    const curLen = Math.sqrt(dx*dx + dy*dy) || 1;
+    const curAng = Math.atan2(-dy, dx);
+    const len = _hudLocked.len != null ? _hudLocked.len : curLen;
+    const ang = _hudLocked.ang != null ? _hudLocked.ang * Math.PI / 180 : curAng;
+    p.x = _drawStart.x + len * Math.cos(ang);
+    p.y = _drawStart.y - len * Math.sin(ang);
+  }
+  if (_drawStart && _hudLocked.rad != null && _activeTool === 'circle') {
+    const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+    const curLen = Math.sqrt(dx*dx + dy*dy) || 1;
+    p.x = _drawStart.x + (dx / curLen) * _hudLocked.rad;
+    p.y = _drawStart.y + (dy / curLen) * _hudLocked.rad;
+  }
+  return p;
 }
 
 // ── KALIBRACE MĚŘÍTKA ─────────────────────────────────────────────────────
@@ -2180,11 +2378,40 @@ function zoomOut() {
 }
 
 function zoomExtents() {
-  canvas.setZoom(1);
-  canvas.viewportTransform = [1, 0, 0, 1, 0, 0];
-  CAD.zoom = 1;
-  document.getElementById('zoomLevel').textContent = '100';
-  canvas.renderAll();
+  const objs = canvas.getObjects().filter(o => !o.excludeFromExport);
+  if (!objs.length) {
+    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    CAD.zoom = 1;
+    document.getElementById('zoomLevel').textContent = '100';
+    return;
+  }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  objs.forEach(o => {
+    // absolute=true,calculate=true → world-space rect, no viewport dependency
+    const b = o.getBoundingRect(true, true);
+    minX = Math.min(minX, b.left);
+    minY = Math.min(minY, b.top);
+    maxX = Math.max(maxX, b.left + b.width);
+    maxY = Math.max(maxY, b.top + b.height);
+  });
+  const contentW = maxX - minX;
+  const contentH = maxY - minY;
+  if (contentW < 1 || contentH < 1) return;
+  const pad = 50;
+  const cw = canvas.width  || 800;
+  const ch = canvas.height || 600;
+  const z = Math.max(Math.min(
+    (cw - 2*pad) / contentW,
+    (ch - 2*pad) / contentH,
+    20
+  ), 0.01);
+  const vpt = [z, 0, 0, z,
+    cw / 2 - ((minX + maxX) / 2) * z,
+    ch / 2 - ((minY + maxY) / 2) * z
+  ];
+  canvas.setViewportTransform(vpt);
+  CAD.zoom = z;
+  document.getElementById('zoomLevel').textContent = Math.round(z * 100);
 }
 
 // ── TOGGLES ────────────────────────────────────────────────────────────────
@@ -2253,6 +2480,9 @@ async function handleImport(e) {
   } else if (ext === 'pdf') {
     showPdfImportModal(file);
     return;
+  } else if (['png','jpg','jpeg','webp','gif','bmp','svg'].includes(ext)) {
+    importImage(file);
+    return;
   } else if (ext === 'dwg') {
     try {
       const text = await file.text();
@@ -2264,6 +2494,36 @@ async function handleImport(e) {
         toast('Binární DWG — otevřete ve FreeCAD a exportujte jako DXF');
       }
     } catch { toast('DWG: exportujte jako DXF ve FreeCAD nebo AutoCAD'); }
+  } else {
+    toast('Nepodporovaný formát. Podporované: DXF, PDF, PNG, JPG, SVG');
+  }
+}
+
+async function importImage(file) {
+  toast('Načítám obrázek…');
+  try {
+    const dataUrl = await new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = e => res(e.target.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    });
+    const imgEl = document.createElement('img');
+    await new Promise((res, rej) => { imgEl.onload = res; imgEl.onerror = rej; imgEl.src = dataUrl; });
+    const layer = getActiveLayer();
+    const fabricImg = new fabric.Image(imgEl, {
+      left: 0, top: 0,
+      selectable: true, evented: true, hasControls: true,
+      _cadLayer: layer.id, _cadType: 'image',
+    });
+    canvas.add(fabricImg);
+    canvas.sendToBack(fabricImg);
+    zoomExtents();
+    saveUndoState();
+    document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+    toast(`Obrázek importován (${imgEl.naturalWidth}×${imgEl.naturalHeight}px)`);
+  } catch (err) {
+    toast('Chyba importu obrázku: ' + err.message);
   }
 }
 
@@ -2287,9 +2547,8 @@ function selectPdfMode(mode) {
   document.querySelector(`input[name="pdfMode"][value="${mode}"]`).checked = true;
 }
 async function confirmPdfImport() {
+  const file = _pdfImportFile;   // save FIRST — closePdfImportModal() nulls it
   closePdfImportModal();
-  const file = _pdfImportFile;
-  _pdfImportFile = null;
   if (!file) return;
   if (_pdfImportMode === 'background') await importPDFBackground(file);
   else                                 await importPDFVectors(file);
@@ -2353,8 +2612,7 @@ async function importPDFBackground(file) {
         _cadType: 'pdf_background',
       });
       canvas.add(fabricImg);
-      // Place above grid lines but below regular drawing objects
-      canvas.moveTo(fabricImg, _gridLines.length);
+      canvas.sendToBack(fabricImg);
       offsetY += (offscreen.height / scale) + 40;
     }
 
@@ -2363,7 +2621,7 @@ async function importPDFBackground(file) {
     zoomExtents();
     saveUndoState();
     document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
-    toast('PDF importováno jako podklad — kalibrujte přes Soubor › Kalibrovat měřítko');
+    toast(`PDF: ${pdf.numPages} stran importováno — zoom nastaven automaticky`);
   } catch (err) {
     console.error('PDF background import:', err);
     toast('Chyba importu PDF: ' + err.message);
@@ -2536,12 +2794,11 @@ async function importPDFVectors(file) {
   }
 }
 
-// Basic DXF parser (lines, circles, arcs, text)
+// DXF parser — LINE, LWPOLYLINE, POLYLINE/VERTEX, CIRCLE, ARC, TEXT, MTEXT
 function parseDXF(text) {
   const lines = text.split('\n').map(l => l.trim());
   const entities = [];
   let i = 0;
-  // Find ENTITIES section
   while (i < lines.length && lines[i] !== 'ENTITIES') i++;
   i++;
 
@@ -2550,47 +2807,103 @@ function parseDXF(text) {
     const code = parseInt(lines[i]);
     const value = lines[i + 1];
     i += 2;
+    if (isNaN(code)) continue;
 
     if (code === 0) {
       if (entity) entities.push(entity);
-      if (value === 'ENDSEC') break;
-      entity = { type: value, props: {} };
+      if (value === 'ENDSEC' || value === 'EOF') break;
+      // VERTEX is part of old-style POLYLINE — skip as standalone entity
+      entity = { type: value, props: {}, vx: [], vy: [] };
     } else if (entity) {
-      entity.props[code] = isNaN(+value) ? value : +value;
+      const num = parseFloat(value);
+      const isNum = !isNaN(num);
+      // Accumulate repeated vertex coordinates for LWPOLYLINE / POLYLINE
+      if (code === 10)      { entity.vx.push(isNum ? num : 0); entity.props[10] = entity.vx[0]; }
+      else if (code === 20) { entity.vy.push(isNum ? num : 0); entity.props[20] = entity.vy[0]; }
+      else entity.props[code] = isNum ? num : value;
     }
   }
   if (entity) entities.push(entity);
 
   const layer = getActiveLayer();
+  let added = 0;
   entities.forEach(e => {
     const p = e.props;
+    const x = v => v || 0;
     switch (e.type) {
       case 'LINE':
-        canvas.add(new fabric.Line([p[10]||0, -(p[20]||0), p[11]||0, -(p[21]||0)], {
+        canvas.add(new fabric.Line([x(p[10]), -x(p[20]), x(p[11]), -x(p[21])], {
           stroke: layer.color, strokeWidth: 1, _cadLayer: layer.id,
         }));
+        added++;
         break;
+
+      case 'LWPOLYLINE': {
+        if (e.vx.length < 2) break;
+        const pts = e.vx.map((xx, k) => ({ x: xx, y: -e.vy[k] }));
+        const closed = (p[70] & 1) === 1;
+        if (closed && pts.length > 2) {
+          canvas.add(new fabric.Polygon(pts, {
+            fill: 'transparent', stroke: layer.color, strokeWidth: 1,
+            _cadLayer: layer.id,
+          }));
+        } else {
+          canvas.add(new fabric.Polyline(pts, {
+            fill: 'transparent', stroke: layer.color, strokeWidth: 1,
+            _cadLayer: layer.id,
+          }));
+        }
+        added++;
+        break;
+      }
+
       case 'CIRCLE':
         canvas.add(new fabric.Circle({
-          left: (p[10]||0), top: -(p[20]||0), radius: p[40]||10,
+          left: x(p[10]), top: -x(p[20]), radius: x(p[40]) || 10,
           fill: 'transparent', stroke: layer.color, strokeWidth: 1,
           originX: 'center', originY: 'center', _cadLayer: layer.id,
         }));
+        added++;
         break;
+
+      case 'ARC': {
+        const cx = x(p[10]), cy = -x(p[20]), r = x(p[40]) || 10;
+        const startA = (p[50] || 0) * Math.PI / 180;
+        const endA   = (p[51] || 90) * Math.PI / 180;
+        // Build arc path
+        const x1 = cx + r * Math.cos(-startA);
+        const y1 = cy + r * Math.sin(-startA);
+        const x2 = cx + r * Math.cos(-endA);
+        const y2 = cy + r * Math.sin(-endA);
+        let sweep = (p[51] - p[50] + 360) % 360;
+        const large = sweep > 180 ? 1 : 0;
+        canvas.add(new fabric.Path(
+          `M ${x1} ${y1} A ${r} ${r} 0 ${large} 0 ${x2} ${y2}`, {
+          fill: 'transparent', stroke: layer.color, strokeWidth: 1,
+          _cadLayer: layer.id,
+        }));
+        added++;
+        break;
+      }
+
       case 'TEXT':
       case 'MTEXT':
-        canvas.add(new fabric.Text(p[1] || '', {
-          left: (p[10]||0), top: -(p[20]||0),
-          fontSize: (p[40] || 10), fill: layer.color,
-          fontFamily: 'JetBrains Mono', _cadLayer: layer.id,
-        }));
+        if (p[1]) {
+          canvas.add(new fabric.Text(String(p[1]), {
+            left: x(p[10]), top: -x(p[20]),
+            fontSize: x(p[40]) || 10, fill: layer.color,
+            fontFamily: 'JetBrains Mono', _cadLayer: layer.id,
+          }));
+          added++;
+        }
         break;
     }
   });
 
   canvas.renderAll();
+  zoomExtents();
   saveUndoState();
-  toast(`Importováno ${entities.length} entit z DXF`);
+  toast(added > 0 ? `DXF: importováno ${added} objektů` : `DXF: žádné podporované entity (${entities.length} nalezeno)`);
 }
 
 // ── EXPORT PDF ─────────────────────────────────────────────────────────────
