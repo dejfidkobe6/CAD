@@ -1872,8 +1872,15 @@ function hidePolarTrack() {
 }
 
 function getPointer(opt) {
-  if (opt.e && opt.e._point) return opt.e._point;
-  const raw = canvas.getPointer(opt.e);
+  // _rawPoint is pre-computed canvas coords from touch (bypasses canvas.getPointer offset calc)
+  // but still passes through snap / ortho / HUD constraints below
+  let raw;
+  if (opt.e && opt.e._rawPoint) {
+    raw = opt.e._rawPoint;
+  } else {
+    const cp = canvas.getPointer(opt.e);
+    raw = { x: cp.x, y: cp.y };
+  }
   let p = { x: raw.x, y: raw.y };
 
   if (CAD.snapEnabled) {
@@ -1945,27 +1952,42 @@ function handleToolMouseDown(opt) {
       break;
 
     case 'rect':
-      _isDrawing = true;
-      _drawStart = p;
-      _tempShape = new fabric.Rect({
-        left: p.x, top: p.y, width: 0, height: 0,
-        fill: 'transparent', stroke: layer.color, strokeWidth: CAD.strokeWidth,
-        selectable: false, evented: false,
-        _cadLayer: layer.id,
-      });
-      canvas.add(_tempShape);
+      if (!_isDrawing) {
+        _isDrawing = true; _drawStart = p;
+        _tempShape = new fabric.Rect({
+          left: p.x, top: p.y, width: 0, height: 0,
+          fill: 'transparent', stroke: layer.color, strokeWidth: CAD.strokeWidth,
+          selectable: false, evented: false, _cadLayer: layer.id,
+        });
+        canvas.add(_tempShape);
+      } else {
+        const rW = Math.abs(p.x - _drawStart.x);
+        const rH = Math.abs(p.y - _drawStart.y);
+        _tempShape.set({ left: Math.min(p.x, _drawStart.x), top: Math.min(p.y, _drawStart.y), width: rW, height: rH });
+        hidePolarTrack();
+        saveUndoState();
+        canvas.renderAll();
+        _tempShape = null; _isDrawing = false; _drawStart = null;
+      }
       break;
 
     case 'circle':
-      _isDrawing = true;
-      _drawStart = p;
-      _tempShape = new fabric.Circle({
-        left: p.x, top: p.y, radius: 0, originX: 'center', originY: 'center',
-        fill: 'transparent', stroke: layer.color, strokeWidth: CAD.strokeWidth,
-        selectable: false, evented: false,
-        _cadLayer: layer.id,
-      });
-      canvas.add(_tempShape);
+      if (!_isDrawing) {
+        _isDrawing = true; _drawStart = p;
+        _tempShape = new fabric.Circle({
+          left: p.x, top: p.y, radius: 0, originX: 'center', originY: 'center',
+          fill: 'transparent', stroke: layer.color, strokeWidth: CAD.strokeWidth,
+          selectable: false, evented: false, _cadLayer: layer.id,
+        });
+        canvas.add(_tempShape);
+      } else {
+        const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+        _tempShape.set({ radius: Math.sqrt(dx * dx + dy * dy) });
+        hidePolarTrack();
+        saveUndoState();
+        canvas.renderAll();
+        _tempShape = null; _isDrawing = false; _drawStart = null;
+      }
       break;
 
     case 'polyline':
@@ -2070,50 +2092,18 @@ function handleToolMouseMove(opt) {
 }
 
 function handleToolMouseUp(opt) {
+  // Only used for desktop mouse drag (mouseup). Touch uses click-click via handleToolMouseDown.
   if (!_isDrawing) return;
+  // On touch, opt.e has no type — skip mouseup-only finalization
+  if (opt.e && opt.e._isTouchEnd) return;
+
   const p = getPointer(opt);
 
   switch (_activeTool) {
-    case 'line':
-      if (_tempShape) {
-        const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
-        const len = Math.sqrt(dx*dx + dy*dy);
-        // Only finalize on mouseup (not touch — touch uses two-tap paradigm)
-        if (opt.e.type === 'mouseup' && len > 2) {
-          _tempShape.set({ x2: p.x, y2: p.y });
-          hidePolarTrack();
-          saveUndoState();
-          canvas.renderAll();
-          _tempShape = null;
-          _isDrawing = false;
-          _drawStart = null;
-        } else if (opt.e.type !== 'mouseup') {
-          // Touch touchend: finalize if user dragged (len > 10px), else keep for second tap
-          if (len > 10) {
-            _tempShape.set({ x2: p.x, y2: p.y });
-            hidePolarTrack();
-            saveUndoState();
-            canvas.renderAll();
-            _tempShape = null;
-            _isDrawing = false;
-            _drawStart = null;
-          }
-        }
-      }
-      break;
     case 'rect':
     case 'circle':
+      // Desktop drag: finalize shape on mouseup
       if (_tempShape) {
-        // If user just tapped (no drag), create a default-sized shape
-        const rW = _tempShape.width  || 0;
-        const rH = _tempShape.height || (_tempShape.radius ? _tempShape.radius * 2 : 0);
-        if (rW < 5 && rH < 5) {
-          if (_activeTool === 'rect') {
-            _tempShape.set({ width: 100, height: 60 });
-          } else {
-            _tempShape.set({ radius: 50 });
-          }
-        }
         saveUndoState();
         canvas.renderAll();
       }
@@ -3803,11 +3793,12 @@ function initTouchHandlers() {
       fabric.util.invertTransform(canvas.viewportTransform));
   }
 
-  function makeFakeEvent(touch) {
+  function makeFakeEvent(touch, isTouchEnd) {
     return {
       clientX: touch.clientX, clientY: touch.clientY,
       button: 0,
-      _point: toCanvasPoint(touch.clientX, touch.clientY),
+      _rawPoint: toCanvasPoint(touch.clientX, touch.clientY),
+      _isTouchEnd: !!isTouchEnd,
     };
   }
 
@@ -3903,7 +3894,15 @@ function initTouchHandlers() {
     }
     e.preventDefault();
     e.stopImmediatePropagation();
-    handleToolMouseMove({ e: makeFakeEvent(e.touches[0]) });
+    const mt = e.touches[0];
+    // Update crosshair position on move
+    const mWrap = document.getElementById('canvasWrap');
+    const mRect = mWrap.getBoundingClientRect();
+    const chH = document.getElementById('crosshairH');
+    const chV = document.getElementById('crosshairV');
+    if (chH) chH.style.top  = (mt.clientY - mRect.top)  + 'px';
+    if (chV) chV.style.left = (mt.clientX - mRect.left) + 'px';
+    handleToolMouseMove({ e: makeFakeEvent(mt) });
   }, { capture: true, passive: false });
 
   wrap.addEventListener('touchend', function(e) {
@@ -3915,12 +3914,12 @@ function initTouchHandlers() {
       const wasHit = _selectHitTarget;
       _selectHitTarget = false;
       panData = null;
-      if (!wasHit) e.stopImmediatePropagation(); // was panning: don't let Fabric.js deselect
-      return; // Fabric.js handles touchend when object was hit
+      if (!wasHit) e.stopImmediatePropagation();
+      return;
     }
+    // Drawing tools: click-click model — touchend does nothing.
+    // The second touchstart calls handleToolMouseDown to finalize.
     panData = null;
-    const t = e.changedTouches[0];
-    if (t) handleToolMouseUp({ e: makeFakeEvent(t) });
   }, { capture: true });
 }
 
