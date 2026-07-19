@@ -73,6 +73,25 @@ if (!$userId) {
     exit;
 }
 
+// ── Zajistit existenci CAD tabulek ──────────────────────────────────────────
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS CAD_drawings (
+        id           INT PRIMARY KEY AUTO_INCREMENT,
+        user_id      INT NOT NULL,
+        name         VARCHAR(255) NOT NULL DEFAULT 'Nový výkres',
+        canvas_json  MEDIUMTEXT,
+        scale        VARCHAR(20)  DEFAULT '1:100',
+        paper_size   VARCHAR(10)  DEFAULT 'A3',
+        grid_size    INT          DEFAULT 100,
+        layers_json  TEXT,
+        titleblock_json TEXT,
+        sort_order   INT          DEFAULT 0,
+        created_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+");
+
 // ── Router ──────────────────────────────────────────────────────────────────
 $action = $_GET['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
@@ -270,6 +289,80 @@ try {
             $stmt = $pdo->prepare('DELETE FROM cad_user_symbols WHERE id = ? AND user_id = ?');
             $stmt->execute([$id, $userId]);
             if ($stmt->rowCount() === 0) { respond(404, 'Symbol nenalezen'); }
+            respond(200);
+            break;
+
+        // ════════════════════════════════════════════════════════════════
+        // VÝKRESY — ukládání / načítání canvas JSON
+        // ════════════════════════════════════════════════════════════════
+
+        case 'load_drawings':
+            // Vrátí seznam výkresů uživatele (bez canvas_json — jen metadata)
+            $stmt = $pdo->prepare(
+                'SELECT id, name, scale, paper_size, sort_order, updated_at
+                 FROM CAD_drawings WHERE user_id = ?
+                 ORDER BY sort_order ASC, updated_at DESC'
+            );
+            $stmt->execute([$userId]);
+            respond(200, null, ['drawings' => $stmt->fetchAll()]);
+            break;
+
+        case 'load_drawing':
+            $id = (int)($_GET['id'] ?? 0);
+            if (!$id) { respond(400, 'Chybí id'); }
+            $stmt = $pdo->prepare(
+                'SELECT id, name, canvas_json, scale, paper_size, grid_size,
+                        layers_json, titleblock_json
+                 FROM CAD_drawings WHERE id = ? AND user_id = ?'
+            );
+            $stmt->execute([$id, $userId]);
+            $drawing = $stmt->fetch();
+            if (!$drawing) { respond(404, 'Výkres nenalezen'); }
+            respond(200, null, ['drawing' => $drawing]);
+            break;
+
+        case 'save_drawing':
+            $input      = getJsonInput();
+            $id         = $input['id'] ?? null;
+            $name       = trim($input['name'] ?? 'Nový výkres');
+            $canvasJson = $input['canvas_json'] ?? '';
+            $scale      = $input['scale'] ?? '1:100';
+            $paperSize  = $input['paper_size'] ?? 'A3';
+            $gridSize   = (int)($input['grid_size'] ?? 100);
+            $layersJson = json_encode($input['layers'] ?? [], JSON_UNESCAPED_UNICODE);
+            $tbJson     = json_encode($input['titleBlock'] ?? [], JSON_UNESCAPED_UNICODE);
+            $sortOrder  = (int)($input['sort_order'] ?? 0);
+
+            if ($id) {
+                $stmt = $pdo->prepare(
+                    'UPDATE CAD_drawings
+                     SET name = ?, canvas_json = ?, scale = ?, paper_size = ?,
+                         grid_size = ?, layers_json = ?, titleblock_json = ?, sort_order = ?
+                     WHERE id = ? AND user_id = ?'
+                );
+                $stmt->execute([$name, $canvasJson, $scale, $paperSize,
+                                $gridSize, $layersJson, $tbJson, $sortOrder, $id, $userId]);
+                if ($stmt->rowCount() === 0) { respond(404, 'Výkres nenalezen'); }
+            } else {
+                $stmt = $pdo->prepare(
+                    'INSERT INTO CAD_drawings
+                     (user_id, name, canvas_json, scale, paper_size, grid_size,
+                      layers_json, titleblock_json, sort_order)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                );
+                $stmt->execute([$userId, $name, $canvasJson, $scale, $paperSize,
+                                $gridSize, $layersJson, $tbJson, $sortOrder]);
+                $id = $pdo->lastInsertId();
+            }
+            respond(200, null, ['id' => (int)$id]);
+            break;
+
+        case 'delete_drawing':
+            $id = (int)($_GET['id'] ?? 0);
+            if (!$id) { respond(400, 'Chybí id'); }
+            $stmt = $pdo->prepare('DELETE FROM CAD_drawings WHERE id = ? AND user_id = ?');
+            $stmt->execute([$id, $userId]);
+            if ($stmt->rowCount() === 0) { respond(404, 'Výkres nenalezen'); }
             respond(200);
             break;
 
