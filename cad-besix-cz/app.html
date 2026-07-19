@@ -1255,11 +1255,18 @@ function switchDrawingTab(id) {
 
   // Load canvas
   if (tab.canvasJSON) {
-    canvas.loadFromJSON(tab.canvasJSON, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
+    canvas.loadFromJSON(tab.canvasJSON, () => {
+      canvas.backgroundColor = '#4A5340';
+      drawGrid();
+      applyToolToObjects();
+      canvas.calcOffset();
+      canvas.renderAll();
+    });
   } else {
     canvas.clear();
     canvas.backgroundColor = '#4A5340';
     drawGrid();
+    applyToolToObjects();
     canvas.renderAll();
   }
 }
@@ -1391,15 +1398,13 @@ async function logout() {
 
 // ── INIT CAD ───────────────────────────────────────────────────────────────
 function initCAD() {
-  // Defer to next animation frame so CSS grid layout has finished computing
-  // dimensions. On mobile, wrap.clientWidth/Height is 0 if read synchronously.
-  requestAnimationFrame(() => {
+  // Double-rAF: first frame triggers layout, second frame reads final dimensions.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
     const wrap = document.getElementById('canvasWrap');
     let w = wrap.clientWidth;
     let h = wrap.clientHeight;
-    // Final fallback: use window dimensions minus approximate chrome
     if (!w) w = window.innerWidth;
-    if (!h) h = Math.max(300, window.innerHeight - Math.round(wrap.getBoundingClientRect().top || 160));
+    if (!h) h = Math.max(300, window.innerHeight - Math.round(wrap.getBoundingClientRect().top || 60));
 
     canvas = new fabric.Canvas('cadCanvas', {
       width: w,
@@ -1411,13 +1416,26 @@ function initCAD() {
       stopContextMenu: true,
     });
 
-    // Resize handler — also fixes lingering dimension issues after orientation change
+    // Resize handler
     window.addEventListener('resize', () => {
       const ww = wrap.clientWidth  || window.innerWidth;
-      const hh = wrap.clientHeight || Math.max(300, window.innerHeight - 160);
+      const hh = wrap.clientHeight || Math.max(300, window.innerHeight - 60);
       canvas.setDimensions({ width: ww, height: hh });
+      canvas.calcOffset();
       drawGrid();
     });
+
+    // Delayed offset recalculation — ensures getPointer() is accurate after
+    // the browser finishes painting (scroll/transform offsets settle at ~100ms)
+    setTimeout(() => {
+      canvas.calcOffset();
+      const ww = wrap.clientWidth;
+      const hh = wrap.clientHeight;
+      if (ww > 0 && hh > 0 && (Math.abs(ww - canvas.width) > 4 || Math.abs(hh - canvas.height) > 4)) {
+        canvas.setDimensions({ width: ww, height: hh });
+      }
+      drawGrid();
+    }, 250);
 
     // Infinite grid — drawn inside renderBackground (after fill, before any objects).
     const _origRenderBg = canvas.renderBackground.bind(canvas);
@@ -1483,7 +1501,8 @@ function initCAD() {
     document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
     initTouchHandlers();
     initHUD();
-  });
+    setTool('select'); // ensure initial tool state is properly applied
+  }));
 }
 
 // ── GRID ───────────────────────────────────────────────────────────────────
@@ -1596,7 +1615,13 @@ function applyToolToObjects() {
   if (!canvas) return;
   const isSelect = _activeTool === 'select';
   canvas.forEachObject(o => {
-    if (o.excludeFromExport) return; // don't touch grid/utility objects
+    if (o.excludeFromExport) return;
+    if (o._cadType === 'pdf_background') {
+      // PDF background is always locked — never selectable/evented
+      o.selectable = false;
+      o.evented    = false;
+      return;
+    }
     o.selectable = isSelect;
     o.evented    = isSelect;
   });
@@ -2644,7 +2669,7 @@ function doUndo() {
   const current = canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']);
   CAD.redoStack.push(JSON.stringify(current));
   const prev = JSON.parse(CAD.undoStack.pop());
-  canvas.loadFromJSON(prev, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
+  canvas.loadFromJSON(prev, () => { canvas.backgroundColor = '#4A5340'; drawGrid(); applyToolToObjects(); canvas.renderAll(); });
   toast('Zpět');
 }
 
@@ -2653,7 +2678,7 @@ function doRedo() {
   const current = canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']);
   CAD.undoStack.push(JSON.stringify(current));
   const next = JSON.parse(CAD.redoStack.pop());
-  canvas.loadFromJSON(next, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
+  canvas.loadFromJSON(next, () => { canvas.backgroundColor = '#4A5340'; drawGrid(); applyToolToObjects(); canvas.renderAll(); });
   toast('Vpřed');
 }
 
@@ -2944,9 +2969,9 @@ async function importPDFBackground(file) {
         top:  offsetY,
         scaleX: 1 / scale,
         scaleY: 1 / scale,
-        selectable: true,
-        evented: true,
-        hasControls: true,
+        selectable: false,
+        evented: false,
+        hasControls: false,
         lockMovementX: true, lockMovementY: true,
         _cadLayer: layer.id,
         _cadType: 'pdf_background', _cadLocked: true,
@@ -2956,6 +2981,7 @@ async function importPDFBackground(file) {
       offsetY += (offscreen.height / scale) + 40;
     }
 
+    applyToolToObjects(); // re-apply tool state after adding PDF objects
     canvas.renderAll();
     // Reset view so user can see the imported content
     zoomExtents();
@@ -3467,14 +3493,20 @@ async function loadFromIndexedDB() {
         renderLayers();
         renderTabs();
         if (activeTab.canvasJSON) {
-          canvas.loadFromJSON(activeTab.canvasJSON, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
+          canvas.loadFromJSON(activeTab.canvasJSON, () => {
+            canvas.backgroundColor = '#4A5340';
+            drawGrid(); applyToolToObjects(); canvas.calcOffset(); canvas.renderAll();
+          });
         }
         db.close();
         toast('Obnoveno z poslední session');
         return;
       }
       if (data.canvasJSON) {
-        canvas.loadFromJSON(data.canvasJSON, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
+        canvas.loadFromJSON(data.canvasJSON, () => {
+          canvas.backgroundColor = '#4A5340';
+          drawGrid(); applyToolToObjects(); canvas.calcOffset(); canvas.renderAll();
+        });
       }
       db.close();
       toast('Obnoveno z poslední session');
