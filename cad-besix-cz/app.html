@@ -335,15 +335,24 @@ body {
 }
 
 /* Snap indicator */
+@keyframes snap-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255,238,68,0.7), 0 0 0 3px rgba(0,0,0,0.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(255,238,68,0), 0 0 0 3px rgba(0,0,0,0.5); }
+  100% { box-shadow: 0 0 0 0 rgba(255,238,68,0), 0 0 0 3px rgba(0,0,0,0.5); }
+}
 .snap-dot {
   position: absolute; pointer-events: none;
-  width: 12px; height: 12px;
-  border: 2px solid var(--cad-snap);
+  width: 20px; height: 20px;
+  border: 3px solid var(--cad-snap);
+  background: rgba(255,238,68,0.15);
   border-radius: 50%;
   transform: translate(-50%, -50%);
   z-index: 10;
   display: none;
+  animation: snap-pulse 0.6s ease-out infinite;
 }
+.snap-dot.snap-endpoint { border-radius: 3px; }
+.snap-dot.snap-center   { border-radius: 50%; transform: translate(-50%,-50%) rotate(45deg); }
 /* Polar tracking line (angle snap indicator) */
 #polarTrack {
   position: absolute; pointer-events: none;
@@ -1435,6 +1444,7 @@ function initCAD() {
       preserveObjectStacking: true,
       fireRightClick: true,
       stopContextMenu: true,
+      skipOffscreen: false,
     });
 
     // ResizeObserver keeps canvas sized to wrapper as layout changes
@@ -1755,44 +1765,48 @@ function getObjSnapPoints(obj) {
       break;
     }
     case 'polyline': {
+      // Points are stored in original coords; Fabric renders them with -pathOffset
+      // translation before applying the object matrix. Subtract pathOffset first.
       const m = obj.calcTransformMatrix();
+      const po = obj.pathOffset || { x: 0, y: 0 };
       (obj.points||[]).forEach((p, i, arr) => {
-        const ap = fabric.util.transformPoint(p, m);
+        const lp = { x: p.x - po.x, y: p.y - po.y };
+        const ap = fabric.util.transformPoint(lp, m);
         pts.push({ x: ap.x, y: ap.y, snapType: 'endpoint' });
         if (i < arr.length - 1) {
-          const np = fabric.util.transformPoint(arr[i+1], m);
+          const nlp = { x: arr[i+1].x - po.x, y: arr[i+1].y - po.y };
+          const np = fabric.util.transformPoint(nlp, m);
           pts.push({ x:(ap.x+np.x)/2, y:(ap.y+np.y)/2, snapType:'midpoint' });
         }
       });
       break;
     }
     case 'path': {
-      // Snap body z path příkazů (M, L, C) přes transform matici
+      // Same pathOffset correction as polyline
       const m = obj.calcTransformMatrix();
-      const snap = [];
+      const po = obj.pathOffset || { x: 0, y: 0 };
+      const rawPts = [];
       (obj.path || []).forEach(cmd => {
         const t = cmd[0];
         if (t === 'M' || t === 'L') {
-          snap.push({ x: cmd[1], y: cmd[2] });
+          rawPts.push({ x: cmd[1] - po.x, y: cmd[2] - po.y });
         } else if (t === 'C') {
-          snap.push({ x: cmd[5], y: cmd[6] }); // endpoint křivky
+          rawPts.push({ x: cmd[5] - po.x, y: cmd[6] - po.y });
         } else if (t === 'Q') {
-          snap.push({ x: cmd[3], y: cmd[4] });
+          rawPts.push({ x: cmd[3] - po.x, y: cmd[4] - po.y });
         }
       });
-      // Omez počet bodů (velké PDF mohou mít tisíce)
-      const step = Math.max(1, Math.floor(snap.length / 40));
-      snap.filter((_, i) => i % step === 0).forEach(p => {
-        const ap = fabric.util.transformPoint(p, m);
+      const step = Math.max(1, Math.floor(rawPts.length / 40));
+      rawPts.filter((_, i) => i % step === 0).forEach(lp => {
+        const ap = fabric.util.transformPoint(lp, m);
         pts.push({ x: ap.x, y: ap.y, snapType: 'endpoint' });
       });
-      // Vždy přidej rohy bounding boxu
       const b = obj.getBoundingRect(true);
-      pts.push({ x:b.left,       y:b.top,        snapType:'endpoint' });
-      pts.push({ x:b.left+b.width, y:b.top,      snapType:'endpoint' });
-      pts.push({ x:b.left+b.width, y:b.top+b.height, snapType:'endpoint' });
-      pts.push({ x:b.left,       y:b.top+b.height, snapType:'endpoint' });
-      pts.push({ x:b.left+b.width/2, y:b.top+b.height/2, snapType:'center' });
+      pts.push({ x:b.left,             y:b.top,              snapType:'endpoint' });
+      pts.push({ x:b.left+b.width,     y:b.top,              snapType:'endpoint' });
+      pts.push({ x:b.left+b.width,     y:b.top+b.height,     snapType:'endpoint' });
+      pts.push({ x:b.left,             y:b.top+b.height,     snapType:'endpoint' });
+      pts.push({ x:b.left+b.width/2,   y:b.top+b.height/2,   snapType:'center' });
       break;
     }
     case 'group':
@@ -1814,9 +1828,11 @@ function getObjSnapPoints(obj) {
 }
 
 function findObjSnap(rawX, rawY) {
-  const SNAP_R = 16;
+  // Keep threshold at a constant ~22 screen pixels regardless of zoom
+  const SNAP_R = 22 / canvas.getZoom();
   let best = null, bestD = SNAP_R;
   canvas.getObjects().forEach(obj => {
+    if (obj === _tempShape) return; // never snap to in-progress shape
     getObjSnapPoints(obj).forEach(pt => {
       const d = Math.hypot(pt.x - rawX, pt.y - rawY);
       if (d < bestD) { bestD = d; best = pt; }
@@ -1833,10 +1849,10 @@ function showSnapMarker(canvasX, canvasY, snapType) {
   dot.style.left = sx + 'px';
   dot.style.top  = sy + 'px';
   dot.style.display = 'block';
-  // Different colors per snap type
-  const colors = { endpoint:'#00ff88', midpoint:'#ffaa00', center:'#00aaff', quadrant:'#ff44ff' };
+  const colors = { endpoint: '#00ff88', midpoint: '#ffaa00', center: '#00aaff', quadrant: '#ff44ff' };
   dot.style.borderColor = colors[snapType] || '#00ff88';
-  dot.style.borderRadius = snapType === 'center' ? '2px' : '50%';
+  // Shape: square = endpoint, circle = midpoint/quadrant, rotated square = center
+  dot.className = 'snap-dot' + (snapType === 'endpoint' ? ' snap-endpoint' : snapType === 'center' ? ' snap-center' : '');
 }
 
 function hideSnapMarker() {
@@ -1906,6 +1922,18 @@ function getPointer(opt) {
     if (snap) {
       p = { x: snap.x, y: snap.y };
       showSnapMarker(snap.x, snap.y, snap.snapType);
+      // On desktop: lock crosshair to the snap point so it's unambiguous
+      if (!opt.e._rawPoint) {
+        const vpt = canvas.viewportTransform;
+        const sx = snap.x * vpt[0] + vpt[4];
+        const sy = snap.y * vpt[3] + vpt[5];
+        const chH = document.getElementById('crosshairH');
+        const chV = document.getElementById('crosshairV');
+        const cd  = document.getElementById('cursorDot');
+        if (chH) chH.style.top  = sy + 'px';
+        if (chV) chV.style.left = sx + 'px';
+        if (cd)  { cd.style.left = sx + 'px'; cd.style.top = sy + 'px'; }
+      }
     } else {
       const step = CAD.gridSize * 0.5;
       if (step >= 4) {
@@ -2093,19 +2121,22 @@ function handleToolMouseMove(opt) {
       if (!_hudLocked.b) document.getElementById('hudB').value = Math.round(rH);
       break;
     }
-    case 'circle':
+    case 'circle': {
       const dx = p.x - _drawStart.x;
       const dy = p.y - _drawStart.y;
       _tempShape.set({ radius: Math.sqrt(dx * dx + dy * dy) });
       break;
-    case 'wall':
+    }
+    case 'wall': {
       const wdx = p.x - _drawStart.x;
       const wdy = p.y - _drawStart.y;
       const wLen = Math.sqrt(wdx * wdx + wdy * wdy);
       const wAngle = Math.atan2(wdy, wdx) * 180 / Math.PI;
       _tempShape.set({ width: wLen, angle: wAngle });
       break;
+    }
   }
+  _tempShape.setCoords();
   canvas.renderAll();
 }
 
