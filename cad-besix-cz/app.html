@@ -1398,13 +1398,20 @@ async function logout() {
 
 // ── INIT CAD ───────────────────────────────────────────────────────────────
 function initCAD() {
-  // Double-rAF: first frame triggers layout, second frame reads final dimensions.
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    const wrap = document.getElementById('canvasWrap');
+  const wrap = document.getElementById('canvasWrap');
+
+  function _doInit() {
     let w = wrap.clientWidth;
     let h = wrap.clientHeight;
+
     if (!w) w = window.innerWidth;
-    if (!h) h = Math.max(300, window.innerHeight - Math.round(wrap.getBoundingClientRect().top || 60));
+    if (!h) {
+      // Measure actual UI chrome heights instead of guessing offsets
+      const topH = (document.getElementById('topBar') || {}).offsetHeight || 48;
+      h = window.innerHeight - topH - (window.innerWidth <= 700 ? 56 : 0);
+    }
+    w = Math.max(w, 200);
+    h = Math.max(h, 200);
 
     canvas = new fabric.Canvas('cadCanvas', {
       width: w,
@@ -1416,7 +1423,19 @@ function initCAD() {
       stopContextMenu: true,
     });
 
-    // Resize handler
+    // ResizeObserver keeps canvas sized to wrapper as layout changes
+    if (window.ResizeObserver) {
+      new ResizeObserver(entries => {
+        const r = entries[0].contentRect;
+        if (r.width > 10 && r.height > 10 &&
+            (Math.abs(r.width - canvas.width) > 2 || Math.abs(r.height - canvas.height) > 2)) {
+          canvas.setDimensions({ width: r.width, height: r.height });
+          canvas.calcOffset();
+          drawGrid();
+        }
+      }).observe(wrap);
+    }
+
     window.addEventListener('resize', () => {
       const ww = wrap.clientWidth  || window.innerWidth;
       const hh = wrap.clientHeight || Math.max(300, window.innerHeight - 60);
@@ -1424,18 +1443,6 @@ function initCAD() {
       canvas.calcOffset();
       drawGrid();
     });
-
-    // Delayed offset recalculation — ensures getPointer() is accurate after
-    // the browser finishes painting (scroll/transform offsets settle at ~100ms)
-    setTimeout(() => {
-      canvas.calcOffset();
-      const ww = wrap.clientWidth;
-      const hh = wrap.clientHeight;
-      if (ww > 0 && hh > 0 && (Math.abs(ww - canvas.width) > 4 || Math.abs(hh - canvas.height) > 4)) {
-        canvas.setDimensions({ width: ww, height: hh });
-      }
-      drawGrid();
-    }, 250);
 
     // Infinite grid — drawn inside renderBackground (after fill, before any objects).
     const _origRenderBg = canvas.renderBackground.bind(canvas);
@@ -1501,8 +1508,11 @@ function initCAD() {
     document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
     initTouchHandlers();
     initHUD();
-    setTool('select'); // ensure initial tool state is properly applied
-  }));
+    setTool('select');
+  }
+
+  // Double-rAF: first frame triggers CSS layout computation, second reads the result
+  requestAnimationFrame(() => requestAnimationFrame(_doInit));
 }
 
 // ── GRID ───────────────────────────────────────────────────────────────────
@@ -3708,76 +3718,64 @@ function toggleMobilePanel(force) {
 
 function initTouchHandlers() {
   if (!canvas) return;
-  const el = canvas.wrapperEl;
   const wrap = document.getElementById('canvasWrap');
   let isPinching = false;
   let pinchData = null;
   let panData = null;
 
-  // Force touch-action:none on all canvas elements so browser gestures don't intercept
-  [el, canvas.upperCanvasEl, canvas.lowerCanvasEl].forEach(function(elem) {
-    if (elem) elem.style.touchAction = 'none';
+  // touch-action:none prevents browser from eating gestures before JS sees them
+  [canvas.wrapperEl, canvas.upperCanvasEl, canvas.lowerCanvasEl].forEach(function(el) {
+    if (el) el.style.touchAction = 'none';
   });
 
-  // Build a synthetic event that canvas.getPointer() will process correctly:
-  // target=upperCanvasEl takes the simple branch (pointer = {clientX, clientY})
-  // then Fabric.js subtracts _offset and applies viewport inverse transform.
-  function makeFakeEvent(touch) {
-    return { clientX: touch.clientX, clientY: touch.clientY, button: 0, target: canvas.upperCanvasEl };
+  // If canvas was somehow initialised at 0×0 (layout not ready), fix it now.
+  function ensureCanvasSized() {
+    if (canvas.width < 10 || canvas.height < 10) {
+      const w = wrap.clientWidth || window.innerWidth;
+      const topH = (document.getElementById('topBar') || {}).offsetHeight || 48;
+      const h = (wrap.clientHeight || window.innerHeight - topH - (window.innerWidth <= 700 ? 56 : 0));
+      if (w > 10 && h > 10) {
+        canvas.setDimensions({ width: w, height: h });
+        canvas.calcOffset();
+        drawGrid();
+      }
+    }
   }
 
-  // ── SINGLE-FINGER DRAWING (capture phase — fires before Fabric.js) ─────────
-  el.addEventListener('touchstart', function(e) {
-    if (e.touches.length !== 1 || isPinching) return;
-    if (_activeTool === 'select') {
-      // In select mode track for viewport pan (Fabric.js handles object tap via its own events)
-      const t = e.touches[0];
-      panData = { x: t.clientX, y: t.clientY, vx: canvas.viewportTransform[4], vy: canvas.viewportTransform[5], moved: false };
-      return;
-    }
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    handleToolMouseDown({ e: makeFakeEvent(e.touches[0]) });
-  }, { capture: true, passive: false });
+  // Convert client coords → Fabric.js canvas coords (handles zoom + pan).
+  // Uses canvas.wrapperEl bounds; falls back to canvasWrap if wrapperEl is 0×0.
+  // Result is passed as event._point so getPointer() returns it without calling
+  // canvas.getPointer() (which requires canvas._offset to be correct).
+  function toCanvasPoint(clientX, clientY) {
+    const el = canvas.wrapperEl || wrap;
+    const b = el.getBoundingClientRect();
+    const ref = (b.width > 0 && b.height > 0) ? b : wrap.getBoundingClientRect();
+    let x = clientX - ref.left;
+    let y = clientY - ref.top;
+    if (ref.width > 0 && canvas.width > 0)  x *= canvas.width  / ref.width;
+    if (ref.height > 0 && canvas.height > 0) y *= canvas.height / ref.height;
+    return fabric.util.transformPoint({ x: x, y: y },
+      fabric.util.invertTransform(canvas.viewportTransform));
+  }
 
-  el.addEventListener('touchmove', function(e) {
-    if (e.touches.length !== 1 || isPinching) return;
-    if (_activeTool === 'select') {
-      if (!panData) return;
-      const t = e.touches[0];
-      const dx = t.clientX - panData.x;
-      const dy = t.clientY - panData.y;
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-        panData.moved = true;
-        const vpt = canvas.viewportTransform;
-        vpt[4] = panData.vx + dx;
-        vpt[5] = panData.vy + dy;
-        canvas.requestRenderAll();
-      }
-      return;
-    }
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    handleToolMouseMove({ e: makeFakeEvent(e.touches[0]) });
-  }, { capture: true, passive: false });
+  function makeFakeEvent(touch) {
+    return {
+      clientX: touch.clientX, clientY: touch.clientY,
+      button: 0,
+      _point: toCanvasPoint(touch.clientX, touch.clientY),
+    };
+  }
 
-  el.addEventListener('touchend', function(e) {
-    if (isPinching) return;
-    if (_activeTool === 'select') {
-      panData = null;
-      return;
-    }
-    e.stopImmediatePropagation();
-    const t = e.changedTouches[0];
-    if (t) handleToolMouseUp({ e: makeFakeEvent(t) });
-  }, { capture: true });
+  // ── ALL LISTENERS ON #canvasWrap (CAPTURE) ─────────────────────────────────
+  // Using canvasWrap (not canvas.wrapperEl) ensures we catch touches even when
+  // the Fabric.js canvas elements are 0×0 (bad layout timing at init).
 
-  // ── 2-FINGER PINCH ZOOM + PAN ──────────────────────────────────────────────
   wrap.addEventListener('touchstart', function(e) {
+    ensureCanvasSized();
+
     if (e.touches.length === 2) {
       e.preventDefault();
-      isPinching = true;
-      panData = null;
+      isPinching = true; panData = null;
       const t1 = e.touches[0], t2 = e.touches[1];
       const rect = wrap.getBoundingClientRect();
       const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
@@ -3785,12 +3783,22 @@ function initTouchHandlers() {
       pinchData = {
         startDist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
         startZoom: canvas.getZoom(),
-        midX, midY, lastMidX: midX, lastMidY: midY,
+        midX: midX, midY: midY, lastMidX: midX, lastMidY: midY,
       };
-    } else if (e.touches.length < 2) {
-      isPinching = false;
+      return;
     }
-  }, { passive: false });
+    if (e.touches.length !== 1 || isPinching) return;
+
+    if (_activeTool === 'select') {
+      const t = e.touches[0];
+      panData = { x: t.clientX, y: t.clientY,
+        vx: canvas.viewportTransform[4], vy: canvas.viewportTransform[5] };
+      return; // let Fabric.js also see the event for object selection
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    handleToolMouseDown({ e: makeFakeEvent(e.touches[0]) });
+  }, { capture: true, passive: false });
 
   wrap.addEventListener('touchmove', function(e) {
     if (e.touches.length === 2 && isPinching && pinchData) {
@@ -3811,12 +3819,39 @@ function initTouchHandlers() {
       CAD.zoom = newZoom;
       const zl = document.getElementById('zoomLevel');
       if (zl) zl.textContent = Math.round(newZoom * 100);
+      return;
     }
-  }, { passive: false });
+    if (e.touches.length !== 1 || isPinching) return;
+
+    if (_activeTool === 'select') {
+      if (!panData) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      const dx = t.clientX - panData.x;
+      const dy = t.clientY - panData.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        const vpt = canvas.viewportTransform;
+        vpt[4] = panData.vx + dx;
+        vpt[5] = panData.vy + dy;
+        canvas.requestRenderAll();
+      }
+      return;
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    handleToolMouseMove({ e: makeFakeEvent(e.touches[0]) });
+  }, { capture: true, passive: false });
 
   wrap.addEventListener('touchend', function(e) {
-    if (e.touches.length < 2) { isPinching = false; pinchData = null; }
-  }, { passive: true });
+    if (isPinching) {
+      if (e.touches.length < 2) { isPinching = false; pinchData = null; }
+      return;
+    }
+    panData = null;
+    if (_activeTool === 'select') return;
+    const t = e.changedTouches[0];
+    if (t) handleToolMouseUp({ e: makeFakeEvent(t) });
+  }, { capture: true });
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
