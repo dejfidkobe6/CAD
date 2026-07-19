@@ -3726,6 +3726,7 @@ function initTouchHandlers() {
   let isPinching = false;
   let pinchData = null;
   let panData = null;
+  let _selectHitTarget = false; // true when touchstart hit a canvas object in select mode
 
   // touch-action:none prevents browser from eating gestures before JS sees them
   [canvas.wrapperEl, canvas.upperCanvasEl, canvas.lowerCanvasEl].forEach(function(el) {
@@ -3796,9 +3797,19 @@ function initTouchHandlers() {
 
     if (_activeTool === 'select') {
       const t = e.touches[0];
+      const target = canvas.findTarget({ clientX: t.clientX, clientY: t.clientY }, false);
+      if (target) {
+        // Touching a canvas object → let Fabric.js handle selection/drag
+        _selectHitTarget = true;
+        panData = null;
+        return; // no preventDefault/stopPropagation: Fabric.js gets the event
+      }
+      // Touching empty space → pan
+      _selectHitTarget = false;
       panData = { x: t.clientX, y: t.clientY,
         vx: canvas.viewportTransform[4], vy: canvas.viewportTransform[5] };
-      return; // let Fabric.js also see the event for object selection
+      e.stopImmediatePropagation(); // prevent Fabric.js rubber-band on empty space
+      return;
     }
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -3829,8 +3840,14 @@ function initTouchHandlers() {
     if (e.touches.length !== 1 || isPinching) return;
 
     if (_activeTool === 'select') {
+      if (_selectHitTarget) {
+        // Object is being dragged by Fabric.js — just prevent browser scroll
+        e.preventDefault();
+        return; // Fabric.js handles the move (no stopPropagation)
+      }
       if (!panData) return;
       e.preventDefault();
+      e.stopImmediatePropagation(); // prevent Fabric.js rubber-band during pan
       const t = e.touches[0];
       const dx = t.clientX - panData.x;
       const dy = t.clientY - panData.y;
@@ -3852,8 +3869,14 @@ function initTouchHandlers() {
       if (e.touches.length < 2) { isPinching = false; pinchData = null; }
       return;
     }
+    if (_activeTool === 'select') {
+      const wasHit = _selectHitTarget;
+      _selectHitTarget = false;
+      panData = null;
+      if (!wasHit) e.stopImmediatePropagation(); // was panning: don't let Fabric.js deselect
+      return; // Fabric.js handles touchend when object was hit
+    }
     panData = null;
-    if (_activeTool === 'select') return;
     const t = e.changedTouches[0];
     if (t) handleToolMouseUp({ e: makeFakeEvent(t) });
   }, { capture: true });
