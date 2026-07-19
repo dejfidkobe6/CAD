@@ -1422,6 +1422,7 @@ function initCAD() {
       fireRightClick: true,
       stopContextMenu: true,
     });
+    toast('CAD init: ' + w + '×' + h + ' DPR=' + (window.devicePixelRatio||1).toFixed(1));
 
     // ResizeObserver keeps canvas sized to wrapper as layout changes
     if (window.ResizeObserver) {
@@ -1463,7 +1464,8 @@ function initCAD() {
       const endY   = (ch - panY) / zoom;
 
       ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const dpr = window.devicePixelRatio || 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       for (let wx = startX; wx <= endX + step; wx += step) {
         const sx = wx * zoom + panX;
@@ -1932,6 +1934,7 @@ function handleToolMouseDown(opt) {
         _tempShape.set({ x2: p.x, y2: p.y });
         hidePolarTrack();
         saveUndoState();
+        canvas.renderAll();
         _tempShape = null;
         _isDrawing = false;
         _drawStart = null;
@@ -2072,6 +2075,7 @@ function handleToolMouseUp(opt) {
     case 'circle':
       if (_tempShape) {
         saveUndoState();
+        canvas.renderAll();
       }
       _tempShape = null;
       _isDrawing = false;
@@ -3772,6 +3776,7 @@ function initTouchHandlers() {
 
   wrap.addEventListener('touchstart', function(e) {
     ensureCanvasSized();
+    toast('Touch: ' + _activeTool + ' ' + canvas.width + '×' + canvas.height);
 
     if (e.touches.length === 2) {
       e.preventDefault();
