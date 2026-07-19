@@ -1325,8 +1325,57 @@ function initCAD() {
     drawGrid();
   });
 
-  // Init grid
-  drawGrid();
+  // Infinite grid — drawn directly on canvas context after every render
+  canvas.on('after:render', function() {
+    if (!CAD.gridVisible) return;
+    const ctx = canvas.contextContainer;
+    const vpt = canvas.viewportTransform;
+    const zoom = vpt[0];
+    const panX = vpt[4];
+    const panY = vpt[5];
+    const cw = canvas.width;
+    const ch = canvas.height;
+    const step = CAD.gridSize;
+    if (step * zoom < 4) return; // too dense to draw
+
+    const worldLeft   = -panX / zoom;
+    const worldTop    = -panY / zoom;
+    const worldRight  = (cw - panX) / zoom;
+    const worldBottom = (ch - panY) / zoom;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // screen-space drawing
+
+    const startX = Math.floor(worldLeft  / step) * step;
+    const startY = Math.floor(worldTop   / step) * step;
+
+    for (let wx = startX; wx <= worldRight + step; wx += step) {
+      const sx = wx * zoom + panX;
+      if (sx < -1 || sx > cw + 1) continue;
+      const isMajor = Math.round(wx / step) % 5 === 0;
+      ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
+      ctx.lineWidth   = isMajor ? 0.7 : 0.4;
+      ctx.beginPath();
+      ctx.moveTo(sx + 0.5, 0);
+      ctx.lineTo(sx + 0.5, ch);
+      ctx.stroke();
+    }
+
+    for (let wy = startY; wy <= worldBottom + step; wy += step) {
+      const sy = wy * zoom + panY;
+      if (sy < -1 || sy > ch + 1) continue;
+      const isMajor = Math.round(wy / step) % 5 === 0;
+      ctx.strokeStyle = isMajor ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.18)';
+      ctx.lineWidth   = isMajor ? 0.7 : 0.4;
+      ctx.beginPath();
+      ctx.moveTo(0, sy + 0.5);
+      ctx.lineTo(cw, sy + 0.5);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  });
+
   renderLayers();
   setupCanvasEvents();
   setupKeyboard();
@@ -1355,8 +1404,10 @@ function initCAD() {
 
 // ── GRID ───────────────────────────────────────────────────────────────────
 function drawGrid() {
-  // Remove old grid
-  _gridLines.forEach(l => canvas.remove(l));
+  // Remove any legacy fabric grid lines from old JSON snapshots
+  canvas.getObjects()
+    .filter(o => o.excludeFromExport)
+    .forEach(o => canvas.remove(o));
   _gridLines = [];
   if (!CAD.gridVisible) { canvas.renderAll(); return; }
 
@@ -2528,9 +2579,8 @@ function selectPdfMode(mode) {
   document.querySelector(`input[name="pdfMode"][value="${mode}"]`).checked = true;
 }
 async function confirmPdfImport() {
+  const file = _pdfImportFile;   // save FIRST — closePdfImportModal() nulls it
   closePdfImportModal();
-  const file = _pdfImportFile;
-  _pdfImportFile = null;
   if (!file) return;
   if (_pdfImportMode === 'background') await importPDFBackground(file);
   else                                 await importPDFVectors(file);
@@ -2594,8 +2644,7 @@ async function importPDFBackground(file) {
         _cadType: 'pdf_background',
       });
       canvas.add(fabricImg);
-      // Place above grid lines but below regular drawing objects
-      canvas.moveTo(fabricImg, _gridLines.length);
+      canvas.sendToBack(fabricImg);
       offsetY += (offscreen.height / scale) + 40;
     }
 
