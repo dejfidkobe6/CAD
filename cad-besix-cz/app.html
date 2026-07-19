@@ -206,10 +206,11 @@ body {
   white-space: nowrap;
 }
 .user-dropdown-item:hover { background: var(--surface); color: var(--accent); }
-#syncDot {
+#serverSyncDot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--green);
   flex-shrink: 0;
+  transition: background 0.3s;
 }
 
 /* ─── TAB BAR ─── */
@@ -806,7 +807,7 @@ body {
     <div class="top-spacer"></div>
 
     <div class="top-right">
-      <div id="syncDot" title="Synchronizováno"></div>
+      <div id="serverSyncDot" title="Synchronizace se serverem"></div>
       <div class="top-user" id="userAvatar" data-initials="?" style="background:#4A5340" onclick="toggleUserMenu(event)" title="Uživatel">
         <div class="user-dropdown" id="userDropdown">
           <div class="user-dropdown-name" id="userDropdownName">—</div>
@@ -1254,7 +1255,7 @@ function switchDrawingTab(id) {
 
   // Load canvas
   if (tab.canvasJSON) {
-    canvas.loadFromJSON(tab.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
+    canvas.loadFromJSON(tab.canvasJSON, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
   } else {
     canvas.clear();
     canvas.backgroundColor = '#4A5340';
@@ -1461,7 +1462,8 @@ function initCAD() {
     renderLayers();
     setupCanvasEvents();
     setupKeyboard();
-    loadFromIndexedDB();
+    // Try server first (cross-device sync), fall back to local IndexedDB
+    loadFromServer().then(ok => { if (!ok) loadFromIndexedDB(); });
 
     // Initialize first drawing tab
     if (_drawingTabs.length === 0) {
@@ -1481,16 +1483,6 @@ function initCAD() {
     document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
     initTouchHandlers();
     initHUD();
-
-    // Second-pass resize: catches cases where rAF still ran before full layout
-    setTimeout(() => {
-      const ww = wrap.clientWidth  || window.innerWidth;
-      const hh = wrap.clientHeight || Math.max(300, window.innerHeight - 160);
-      if (ww !== canvas.width || hh !== canvas.height) {
-        canvas.setDimensions({ width: ww, height: hh });
-        canvas.requestRenderAll();
-      }
-    }, 200);
   });
 }
 
@@ -1596,6 +1588,21 @@ function setupCanvasEvents() {
 }
 
 // ── DRAWING TOOLS ──────────────────────────────────────────────────────────
+
+// Apply current tool state to all canvas objects.
+// Must be called after setTool() AND after every canvas.loadFromJSON()
+// because loadFromJSON restores the saved selectable/evented values.
+function applyToolToObjects() {
+  if (!canvas) return;
+  const isSelect = _activeTool === 'select';
+  canvas.forEachObject(o => {
+    if (o.excludeFromExport) return; // don't touch grid/utility objects
+    o.selectable = isSelect;
+    o.evented    = isSelect;
+  });
+  canvas.selection = isSelect;
+}
+
 function setTool(tool) {
   _activeTool = tool;
   _isDrawing = false;
@@ -1608,8 +1615,7 @@ function setTool(tool) {
   const btn = document.querySelector(`.tool-btn[data-tool="${tool}"]`);
   if (btn) btn.classList.add('active');
 
-  canvas.selection = (tool === 'select');
-  canvas.forEachObject(o => { if (!o.excludeFromExport) o.selectable = (tool === 'select'); });
+  applyToolToObjects();
   canvas.discardActiveObject().renderAll();
 
   const names = {
@@ -2638,7 +2644,7 @@ function doUndo() {
   const current = canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']);
   CAD.redoStack.push(JSON.stringify(current));
   const prev = JSON.parse(CAD.undoStack.pop());
-  canvas.loadFromJSON(prev, () => { drawGrid(); canvas.renderAll(); });
+  canvas.loadFromJSON(prev, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
   toast('Zpět');
 }
 
@@ -2647,7 +2653,7 @@ function doRedo() {
   const current = canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport']);
   CAD.undoStack.push(JSON.stringify(current));
   const next = JSON.parse(CAD.redoStack.pop());
-  canvas.loadFromJSON(next, () => { drawGrid(); canvas.renderAll(); });
+  canvas.loadFromJSON(next, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
   toast('Vpřed');
 }
 
@@ -3461,14 +3467,14 @@ async function loadFromIndexedDB() {
         renderLayers();
         renderTabs();
         if (activeTab.canvasJSON) {
-          canvas.loadFromJSON(activeTab.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
+          canvas.loadFromJSON(activeTab.canvasJSON, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
         }
         db.close();
         toast('Obnoveno z poslední session');
         return;
       }
       if (data.canvasJSON) {
-        canvas.loadFromJSON(data.canvasJSON, () => { drawGrid(); canvas.renderAll(); });
+        canvas.loadFromJSON(data.canvasJSON, () => { drawGrid(); applyToolToObjects(); canvas.renderAll(); });
       }
       db.close();
       toast('Obnoveno z poslední session');
@@ -3477,8 +3483,121 @@ async function loadFromIndexedDB() {
   } catch (e) { console.warn('Load failed:', e); }
 }
 
+// ── SERVER SYNC ─────────────────────────────────────────────────────────────
+const _CAD_API = '/api/cad.php';
+let _serverSyncBusy = false;
+
+// Strip raster PDF backgrounds from canvas JSON before sending to server
+// (they can be several MB; user can re-import on any device)
+function _stripPdfBackgrounds(json) {
+  if (!json || !json.objects) return json;
+  const copy = Object.assign({}, json);
+  copy.objects = json.objects.filter(o => o._cadType !== 'pdf_background' && o._cadType !== 'image');
+  return copy;
+}
+
+async function saveToServer(quiet = false) {
+  if (_serverSyncBusy) return;
+  _serverSyncBusy = true;
+  try {
+    const indicator = document.getElementById('serverSyncDot');
+    if (indicator) indicator.style.background = '#ffaa00'; // syncing
+    for (let i = 0; i < _drawingTabs.length; i++) {
+      const tab = _drawingTabs[i];
+      const rawJson = tab.id === _activeTabId
+        ? canvas.toJSON(['_cadLayer', '_cadType', 'excludeFromExport', '_cadLocked'])
+        : tab.canvasJSON;
+      const strippedJson = _stripPdfBackgrounds(rawJson);
+      const body = {
+        id:          tab.serverId || null,
+        name:        tab.name,
+        canvas_json: strippedJson ? JSON.stringify(strippedJson) : '',
+        scale:       tab.id === _activeTabId ? CAD.scale      : (tab.scale      || '1:100'),
+        paper_size:  tab.id === _activeTabId ? CAD.paperSize  : (tab.paperSize  || 'A3'),
+        grid_size:   tab.id === _activeTabId ? CAD.gridSize   : (tab.gridSize   || 100),
+        layers:      tab.id === _activeTabId ? CAD.layers     : (tab.layers     || CAD.layers),
+        titleBlock:  tab.id === _activeTabId ? CAD.titleBlock : (tab.titleBlock || CAD.titleBlock),
+        sort_order:  i,
+      };
+      const resp = await fetch(_CAD_API + '?action=save_drawing', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (resp.ok) {
+        const d = await resp.json();
+        if (d.id) tab.serverId = d.id;
+      }
+    }
+    if (indicator) indicator.style.background = '#34c759'; // saved
+    if (!quiet) toast('Výkresy uloženy na server');
+  } catch (e) {
+    const indicator = document.getElementById('serverSyncDot');
+    if (indicator) indicator.style.background = '#ff3b30'; // error
+    if (!quiet) console.warn('Server save failed:', e);
+  } finally {
+    _serverSyncBusy = false;
+  }
+}
+
+async function loadFromServer() {
+  try {
+    const listResp = await fetch(_CAD_API + '?action=load_drawings', { credentials: 'include' });
+    if (!listResp.ok) return false;
+    const listData = await listResp.json();
+    if (!listData.success || !listData.drawings || !listData.drawings.length) return false;
+
+    const tabs = [];
+    for (const meta of listData.drawings) {
+      const r = await fetch(_CAD_API + `?action=load_drawing&id=${meta.id}`, { credentials: 'include' });
+      if (!r.ok) continue;
+      const d = await r.json();
+      if (!d.success || !d.drawing) continue;
+      const dr = d.drawing;
+      let parsedJson = null;
+      try { parsedJson = dr.canvas_json ? JSON.parse(dr.canvas_json) : null; } catch {}
+      let parsedLayers = null;
+      try { parsedLayers = dr.layers_json ? JSON.parse(dr.layers_json) : null; } catch {}
+      let parsedTB = null;
+      try { parsedTB = dr.titleblock_json ? JSON.parse(dr.titleblock_json) : null; } catch {}
+      _tabCounter++;
+      tabs.push({
+        id:          _tabCounter,
+        serverId:    dr.id,
+        name:        dr.name,
+        canvasJSON:  parsedJson,
+        scale:       dr.scale       || '1:100',
+        paperSize:   dr.paper_size  || 'A3',
+        gridSize:    dr.grid_size   || 100,
+        layers:      parsedLayers   || JSON.parse(JSON.stringify(CAD.layers)),
+        titleBlock:  parsedTB       || JSON.parse(JSON.stringify(CAD.titleBlock)),
+        undoStack: [], redoStack: [],
+      });
+    }
+
+    if (tabs.length) {
+      _drawingTabs = tabs;
+      _activeTabId = tabs[0].id;
+      renderTabs();
+      switchDrawingTab(tabs[0].id);
+      toast('Výkresy načteny z vašeho účtu');
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.warn('Server load failed:', e);
+    return false;
+  }
+}
+
+// Autosave every 60s — local + server
+async function doAutoSave() {
+  await autoSave();
+  saveToServer(true); // quiet (no toast)
+}
+
 // Autosave every 60s
-setInterval(autoSave, 60000);
+setInterval(doAutoSave, 60000);
 
 // Warn on close
 window.addEventListener('beforeunload', (e) => {
