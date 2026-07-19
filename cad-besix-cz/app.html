@@ -17,14 +17,15 @@
    Design: Industrial dark, matching board.besix.cz palette
    ═══════════════════════════════════════════════════════════════════════════ */
 :root {
-  --bg: #1e2710;
-  --surface: #1a2a0e;
+  /* BeSix brand palette */
+  --bg: #2c3326;
+  --surface: #252e20;
   --surface2: rgba(255,255,255,0.07);
   --surface3: rgba(255,255,255,0.11);
   --border: rgba(255,255,255,0.1);
   --border2: rgba(255,255,255,0.16);
-  --accent: #c9922a;
-  --accent2: #d4a035;
+  --accent: #C9A84C;
+  --accent2: #d4b45a;
   --text: rgba(255,255,255,0.88);
   --text2: rgba(255,255,255,0.5);
   --muted: rgba(255,255,255,0.3);
@@ -32,14 +33,14 @@
   --green: #34c759;
   --blue: #007aff;
 
-  --cad-bg: #1a1a2e;
-  --cad-grid: rgba(255,255,255,0.05);
-  --cad-grid-major: rgba(255,255,255,0.09);
-  --cad-snap: #00ff88;
-  --cad-crosshair: rgba(255,255,255,0.4);
+  --cad-bg: #4A5340;
+  --cad-grid: rgba(255,255,255,0.08);
+  --cad-grid-major: rgba(255,255,255,0.14);
+  --cad-snap: #ffee44;
+  --cad-crosshair: rgba(255,255,255,0.35);
 
-  --toolbar-bg: #0f1508;
-  --panel-bg: #151d0b;
+  --toolbar-bg: #1e2419;
+  --panel-bg: #222918;
   --panel-w: 220px;
   --toolbar-w: 44px;
   --topbar-h: 40px;
@@ -552,6 +553,40 @@ body {
   :root { --panel-w: 180px; }
 }
 
+/* ── Drawing HUD ── */
+#drawHUD {
+  display: none;
+  position: fixed;
+  right: 12px; bottom: 70px;
+  background: rgba(30,36,25,0.96);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 8px 10px;
+  z-index: 250;
+  backdrop-filter: blur(8px);
+  min-width: 140px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+#drawHUD.visible { display: block; }
+.hud-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 0;
+}
+.hud-label {
+  color: var(--text2); font-size: 10px; font-weight: 700;
+  width: 18px; text-align: right; letter-spacing: .05em;
+}
+.hud-input {
+  flex: 1; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  padding: 3px 6px; width: 80px;
+  text-align: right;
+}
+.hud-input:focus { outline: none; border-color: var(--accent); color: #fff; }
+.hud-input.locked { border-color: var(--accent); color: var(--accent); }
+.hud-sep { height: 1px; background: var(--border); margin: 4px 0; }
+
 /* ── Mobile bottom toolbar ── */
 #mobileBar {
   display: none;
@@ -857,6 +892,27 @@ body {
 </div>
 
 <!-- MOBILE BOTTOM TOOLBAR -->
+<!-- DRAWING HUD -->
+<div id="drawHUD">
+  <div class="hud-row">
+    <span class="hud-label">X</span>
+    <input id="hudX" class="hud-input" type="number" step="0.1" placeholder="—" title="Souřadnice X">
+  </div>
+  <div class="hud-row">
+    <span class="hud-label">Y</span>
+    <input id="hudY" class="hud-input" type="number" step="0.1" placeholder="—" title="Souřadnice Y">
+  </div>
+  <div class="hud-sep"></div>
+  <div class="hud-row" id="hudLenRow">
+    <span class="hud-label">mm</span>
+    <input id="hudLen" class="hud-input" type="number" step="1" min="0" placeholder="délka" title="Délka v mm (Enter = zafixovat)">
+  </div>
+  <div class="hud-row" id="hudAngRow">
+    <span class="hud-label">°</span>
+    <input id="hudAng" class="hud-input" type="number" step="1" placeholder="úhel" title="Úhel ve stupních (Enter = zafixovat)">
+  </div>
+</div>
+
 <div id="mobileBar">
   <button class="mob-btn active" data-tool="select" onclick="setTool('select')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 3l14 9-7 2-3 7z"/></svg>Výběr
@@ -1009,7 +1065,7 @@ body {
 </div>
 
 <!-- Hidden file inputs -->
-<input type="file" id="importFileInput" accept=".dxf,.pdf,.dwg" style="display:none" onchange="handleImport(event)">
+<input type="file" id="importFileInput" accept=".dxf,.pdf,.dwg,.png,.jpg,.jpeg,.webp,.svg,.gif,.bmp" style="display:none" onchange="handleImport(event)">
 
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1230,7 +1286,7 @@ function initCAD() {
   canvas = new fabric.Canvas('cadCanvas', {
     width: w,
     height: h,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#4A5340',
     selection: true,
     preserveObjectStacking: true,
     fireRightClick: true,
@@ -1270,6 +1326,7 @@ function initCAD() {
   // Set initial date
   document.getElementById('tb_date').value = new Date().toISOString().split('T')[0];
   initTouchHandlers();
+  initHUD();
 }
 
 // ── GRID ───────────────────────────────────────────────────────────────────
@@ -1430,6 +1487,16 @@ function setTool(tool) {
   document.querySelectorAll('#mobileBar .mob-btn').forEach(b => b.classList.remove('active'));
   const mobBtn = document.querySelector(`#mobileBar .mob-btn[data-tool="${tool}"]`);
   if (mobBtn) mobBtn.classList.add('active');
+  // Show/hide drawing HUD
+  const drawingTools = ['line','rect','circle','polyline','wall','dimension'];
+  const hud = document.getElementById('drawHUD');
+  hud.classList.toggle('visible', drawingTools.includes(tool));
+  const hasLenAng = ['line','wall','dimension'].includes(tool);
+  document.getElementById('hudLenRow').style.display = hasLenAng ? '' : 'none';
+  document.getElementById('hudAngRow').style.display = hasLenAng ? '' : 'none';
+  // Reset locked values when tool changes
+  _hudLocked = {};
+  document.querySelectorAll('.hud-input').forEach(i => i.classList.remove('locked'));
 }
 
 function getActiveLayer() {
@@ -1586,6 +1653,10 @@ function getPointer(opt) {
     if (dx > dy) p.y = _drawStart.y;
     else p.x = _drawStart.x;
   }
+  // Apply HUD constraints (locked length/angle/x/y)
+  if (Object.keys(_hudLocked).length) p = hudGetConstrainedPoint(p);
+  // Update HUD display
+  hudUpdate(p);
   return p;
 }
 
@@ -1887,6 +1958,68 @@ function setupKeyboard() {
     else if (key === '+' || key === '=') { zoomIn(); }
     else if (key === '-') { zoomOut(); }
   });
+}
+
+// ── DRAWING HUD ────────────────────────────────────────────────────────────
+let _hudLocked = {}; // { len: number, ang: number, x: number, y: number }
+
+function hudUpdate(p) {
+  const hud = document.getElementById('drawHUD');
+  if (!hud.classList.contains('visible')) return;
+  const xEl = document.getElementById('hudX');
+  const yEl = document.getElementById('hudY');
+  if (!_hudLocked.x) xEl.value = Math.round(p.x * 10) / 10;
+  if (!_hudLocked.y) yEl.value = Math.round(-p.y * 10) / 10; // flip Y for display
+
+  if (_drawStart && ['line','wall','dimension'].includes(_activeTool)) {
+    const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const ang = Math.round(Math.atan2(-dy, dx) * 180 / Math.PI * 10) / 10;
+    if (!_hudLocked.len) document.getElementById('hudLen').value = Math.round(len * 10) / 10;
+    if (!_hudLocked.ang) document.getElementById('hudAng').value = ang;
+  }
+}
+
+function hudApplyLock(field) {
+  const el = document.getElementById('hud' + field[0].toUpperCase() + field.slice(1));
+  const val = parseFloat(el.value);
+  if (isNaN(val)) { delete _hudLocked[field]; el.classList.remove('locked'); return; }
+  _hudLocked[field] = val;
+  el.classList.add('locked');
+}
+
+// Lock a field on Enter key in HUD input
+function initHUD() {
+  ['hudLen','hudAng','hudX','hudY'].forEach(id => {
+    const el = document.getElementById(id);
+    const field = id.replace('hud','').toLowerCase();
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); hudApplyLock(field); el.blur(); }
+      if (e.key === 'Escape') { delete _hudLocked[field]; el.classList.remove('locked'); el.blur(); }
+      e.stopPropagation(); // prevent tool shortcuts while typing
+    });
+    el.addEventListener('dblclick', () => {
+      delete _hudLocked[field]; el.classList.remove('locked');
+    });
+  });
+}
+
+function hudGetConstrainedPoint(raw) {
+  let p = { ...raw };
+  // Apply locked X/Y
+  if (_hudLocked.x != null) p.x = _hudLocked.x;
+  if (_hudLocked.y != null) p.y = -_hudLocked.y; // flip back
+  // Apply locked length/angle from start point
+  if (_drawStart && (_hudLocked.len != null || _hudLocked.ang != null) && ['line','wall','dimension'].includes(_activeTool)) {
+    const dx = p.x - _drawStart.x, dy = p.y - _drawStart.y;
+    const curLen = Math.sqrt(dx*dx + dy*dy) || 1;
+    const curAng = Math.atan2(-dy, dx);
+    const len = _hudLocked.len != null ? _hudLocked.len : curLen;
+    const ang = _hudLocked.ang != null ? _hudLocked.ang * Math.PI / 180 : curAng;
+    p.x = _drawStart.x + len * Math.cos(ang);
+    p.y = _drawStart.y - len * Math.sin(ang);
+  }
+  return p;
 }
 
 // ── KALIBRACE MĚŘÍTKA ─────────────────────────────────────────────────────
@@ -2286,6 +2419,9 @@ async function handleImport(e) {
   } else if (ext === 'pdf') {
     showPdfImportModal(file);
     return;
+  } else if (['png','jpg','jpeg','webp','gif','bmp','svg'].includes(ext)) {
+    importImage(file);
+    return;
   } else if (ext === 'dwg') {
     try {
       const text = await file.text();
@@ -2297,6 +2433,36 @@ async function handleImport(e) {
         toast('Binární DWG — otevřete ve FreeCAD a exportujte jako DXF');
       }
     } catch { toast('DWG: exportujte jako DXF ve FreeCAD nebo AutoCAD'); }
+  } else {
+    toast('Nepodporovaný formát. Podporované: DXF, PDF, PNG, JPG, SVG');
+  }
+}
+
+async function importImage(file) {
+  toast('Načítám obrázek…');
+  try {
+    const dataUrl = await new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = e => res(e.target.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    });
+    const imgEl = document.createElement('img');
+    await new Promise((res, rej) => { imgEl.onload = res; imgEl.onerror = rej; imgEl.src = dataUrl; });
+    const layer = getActiveLayer();
+    const fabricImg = new fabric.Image(imgEl, {
+      left: 0, top: 0,
+      selectable: true, evented: true, hasControls: true,
+      _cadLayer: layer.id, _cadType: 'image',
+    });
+    canvas.add(fabricImg);
+    canvas.moveTo(fabricImg, _gridLines.length);
+    zoomExtents();
+    saveUndoState();
+    document.getElementById('diName').textContent = file.name.replace(/\.[^.]+$/, '');
+    toast(`Obrázek importován (${imgEl.naturalWidth}×${imgEl.naturalHeight}px)`);
+  } catch (err) {
+    toast('Chyba importu obrázku: ' + err.message);
   }
 }
 
