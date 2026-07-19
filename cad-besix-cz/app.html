@@ -602,6 +602,33 @@ body {
 .hud-input:focus { outline: none; border-color: var(--accent); color: #fff; }
 .hud-input.locked { border-color: var(--accent); color: var(--accent); }
 .hud-sep { height: 1px; background: var(--border); margin: 4px 0; }
+/* Stroke-width slider */
+#hudSwRow { flex-direction: column; align-items: stretch; gap: 4px; padding: 4px 0; }
+.hud-sw-preview { height: 22px; background: rgba(0,0,0,0.25); border-radius: 4px; display: flex; align-items: center; padding: 0 6px; }
+#hudSwLine { display: block; width: 100%; background: var(--accent); border-radius: 99px; transition: height 0.08s; }
+#hudSw {
+  width: 100%; margin: 0;
+  -webkit-appearance: none; appearance: none;
+  height: 4px; border-radius: 2px;
+  background: var(--border);
+  outline: none; cursor: pointer;
+}
+#hudSw::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--panel-bg);
+  cursor: pointer;
+}
+#hudSw::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--panel-bg);
+  cursor: pointer;
+}
+.hud-sw-footer { display: flex; align-items: center; gap: 6px; }
+.hud-sw-label { color: var(--text2); font-size: 9px; font-weight: 700; letter-spacing: .05em; }
+#hudSwVal { margin-left: auto; font-size: 10px; color: var(--accent); font-family: 'JetBrains Mono', monospace; }
 
 /* ── Mobile bottom toolbar ── */
 #mobileBar {
@@ -935,6 +962,15 @@ body {
     <span class="hud-label">t</span>
     <input id="hudThk" class="hud-input" type="number" step="1" min="1" placeholder="tloušťka" title="Tloušťka zdi (Enter = zafixovat)">
   </div>
+  <div class="hud-sep"></div>
+  <div class="hud-row" id="hudSwRow">
+    <div class="hud-sw-preview"><span id="hudSwLine"></span></div>
+    <input id="hudSw" type="range" min="0.3" max="8" step="0.1" value="1.5">
+    <div class="hud-sw-footer">
+      <span class="hud-sw-label">TLOUŠŤKA ČÁRY</span>
+      <span id="hudSwVal">1.5</span>
+    </div>
+  </div>
 </div>
 
 <div id="mobileBar">
@@ -1229,6 +1265,7 @@ const CAD = {
   gridSize: 100,     // mm
   gridVisible: true,
   snapEnabled: true,
+  strokeWidth: 1.5,
   orthoEnabled: false,
   zoom: 1,
   panX: 0, panY: 0,
@@ -1571,6 +1608,7 @@ function setTool(tool) {
   document.getElementById('hudAngRow').style.display = hasLenAng ? '' : 'none';
   document.getElementById('hudRadRow').style.display = tool === 'circle' ? '' : 'none';
   document.getElementById('hudThkRow').style.display = tool === 'wall' ? '' : 'none';
+  document.getElementById('hudSwRow').style.display  = drawingTools.includes(tool) ? '' : 'none';
   // Reset locked values when tool changes (keep thk)
   const prevThk = _hudLocked.thk;
   _hudLocked = {};
@@ -1753,13 +1791,13 @@ function handleToolMouseDown(opt) {
         _isDrawing = true;
         _drawStart = p;
         _tempShape = new fabric.Line([p.x, p.y, p.x, p.y], {
-          stroke: layer.color, strokeWidth: 1.5,
+          stroke: layer.color, strokeWidth: CAD.strokeWidth,
           selectable: false, evented: false,
           _cadLayer: layer.id,
         });
         canvas.add(_tempShape);
       } else {
-        _tempShape.set({ x2: p.x, y2: p.y, selectable: true, evented: true });
+        _tempShape.set({ x2: p.x, y2: p.y });
         saveUndoState();
         _tempShape = null;
         _isDrawing = false;
@@ -1772,7 +1810,7 @@ function handleToolMouseDown(opt) {
       _drawStart = p;
       _tempShape = new fabric.Rect({
         left: p.x, top: p.y, width: 0, height: 0,
-        fill: 'transparent', stroke: layer.color, strokeWidth: 1.5,
+        fill: 'transparent', stroke: layer.color, strokeWidth: CAD.strokeWidth,
         selectable: false, evented: false,
         _cadLayer: layer.id,
       });
@@ -1784,7 +1822,7 @@ function handleToolMouseDown(opt) {
       _drawStart = p;
       _tempShape = new fabric.Circle({
         left: p.x, top: p.y, radius: 0, originX: 'center', originY: 'center',
-        fill: 'transparent', stroke: layer.color, strokeWidth: 1.5,
+        fill: 'transparent', stroke: layer.color, strokeWidth: CAD.strokeWidth,
         selectable: false, evented: false,
         _cadLayer: layer.id,
       });
@@ -1833,7 +1871,7 @@ function handleToolMouseDown(opt) {
         _tempShape = new fabric.Rect({
           left: p.x, top: p.y - thickness / 2,
           width: 0, height: thickness,
-          fill: 'rgba(255,68,68,0.15)', stroke: layer.color, strokeWidth: 1.5,
+          fill: 'rgba(255,68,68,0.15)', stroke: layer.color, strokeWidth: CAD.strokeWidth,
           selectable: false, evented: false,
           _cadLayer: layer.id, _cadType: 'wall',
         });
@@ -1843,10 +1881,7 @@ function handleToolMouseDown(opt) {
         const dy = p.y - _drawStart.y;
         const len = Math.sqrt(dx * dx + dy * dy);
         const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-        _tempShape.set({
-          width: len, angle: angle,
-          selectable: true, evented: true,
-        });
+        _tempShape.set({ width: len, angle: angle });
         canvas.renderAll();
         saveUndoState();
         _tempShape = null;
@@ -1897,7 +1932,6 @@ function handleToolMouseUp(opt) {
     case 'rect':
     case 'circle':
       if (_tempShape) {
-        _tempShape.set({ selectable: true, evented: true });
         saveUndoState();
       }
       _tempShape = null;
@@ -1962,7 +1996,7 @@ function finishPolyline() {
   const layer = getActiveLayer();
   const pts = _polyPoints.flatMap(p => [p.x, p.y]);
   const pl = new fabric.Polyline(_polyPoints.map(p => ({ x: p.x, y: p.y })), {
-    fill: 'transparent', stroke: layer.color, strokeWidth: 1.5,
+    fill: 'transparent', stroke: layer.color, strokeWidth: CAD.strokeWidth,
     _cadLayer: layer.id,
   });
   canvas.add(pl);
@@ -2089,6 +2123,23 @@ function initHUD() {
       delete _hudLocked[field]; el.classList.remove('locked');
     });
   });
+
+  // Stroke-width slider
+  const swSlider = document.getElementById('hudSw');
+  const swVal    = document.getElementById('hudSwVal');
+  const swLine   = document.getElementById('hudSwLine');
+  function applySwPreview() {
+    const sw = parseFloat(swSlider.value);
+    CAD.strokeWidth = sw;
+    swVal.textContent = sw.toFixed(1);
+    // Scale line height for visibility: 0.3→1px, 1.5→4px, 8→20px
+    const h = Math.max(1, Math.min(20, Math.round(sw * 2.5)));
+    swLine.style.height = h + 'px';
+  }
+  swSlider.addEventListener('input', applySwPreview);
+  swSlider.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+  swSlider.addEventListener('touchmove',  e => e.stopPropagation(), { passive: true });
+  applySwPreview();
 }
 
 function hudGetConstrainedPoint(raw) {
