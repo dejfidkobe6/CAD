@@ -33,43 +33,55 @@
    Design: Industrial dark, matching board.besix.cz palette
    ═══════════════════════════════════════════════════════════════════════════ */
 :root {
-  /* BeSix brand palette */
-  --bg: #2c3326;
-  --surface: #252e20;
-  --surface2: rgba(255,255,255,0.07);
-  --surface3: rgba(255,255,255,0.11);
-  --border: rgba(255,255,255,0.1);
-  --border2: rgba(255,255,255,0.16);
-  --accent: #C9A84C;
-  --accent2: #d4b45a;
-  --text: rgba(255,255,255,0.88);
-  --text2: rgba(255,255,255,0.5);
-  --muted: rgba(255,255,255,0.3);
-  --danger: #ff3b30;
-  --green: #34c759;
-  --blue: #007aff;
+  /* ── BeSix brand core ──────────────────────────────────────────────────── */
+  /* Olive Green #4A5340 | Gold #C9A84C                                      */
 
-  --cad-bg: #4A5340;
-  --cad-grid: rgba(201,168,76,0.18);
+  /* UI povrchy — tmavé odvozené z olivové                                   */
+  --bg:       #242b1e;                  /* olivová ztmavená ~50 %            */
+  --surface:  #1d2418;                  /* toolbar / boční panely            */
+  --surface2: rgba(74,83,64,0.30);     /* hover pozadí karet                */
+  --surface3: rgba(74,83,64,0.55);     /* aktivní / vybrané                 */
+  --border:   rgba(74,83,64,0.55);     /* subtilní hranice, olivový nádech  */
+  --border2:  rgba(201,168,76,0.28);   /* zlatý akcent-border               */
+
+  /* Akcent */
+  --accent:  #C9A84C;                   /* BeSix Gold — přesná hodnota       */
+  --accent2: #d8b860;                   /* světlejší gold pro hover          */
+
+  /* Text */
+  --text:  rgba(255,255,255,0.90);
+  --text2: rgba(255,255,255,0.52);
+  --muted: rgba(255,255,255,0.28);
+
+  /* Sémantické stavy — laděné do brandové palety                            */
+  --danger: #c05a44;                    /* teplá červená, olivová-friendly   */
+  --green:  #7aab68;                    /* tlumená olivová zelená            */
+  --blue:   #5a8fbe;                    /* neutrální modrá                   */
+
+  /* CAD canvas */
+  --cad-bg:         #4A5340;           /* BeSix Olive Green — plátno        */
+  --cad-grid:       rgba(201,168,76,0.18);
   --cad-grid-major: rgba(201,168,76,0.45);
-  --cad-snap: #ffee44;
-  --cad-crosshair: rgba(201,168,76,0.75);
+  --cad-snap:       #ffee44;
+  --cad-crosshair:  rgba(201,168,76,0.78);
 
-  --toolbar-bg: #1e2419;
-  --panel-bg: #222918;
-  --panel-w: 220px;
-  --toolbar-w: 44px;
-  --topbar-h: 40px;
-  --tabbar-h: 34px;
+  /* Layout */
+  --toolbar-bg:  #191f14;
+  --panel-bg:    #1d2418;
+  --panel-w:     220px;
+  --toolbar-w:   44px;
+  --topbar-h:    40px;
+  --tabbar-h:    34px;
   --statusbar-h: 28px;
 
-  --layer-nosne: #ff4444;
-  --layer-pricky: #44cc44;
-  --layer-koty: #4488ff;
-  --layer-text: #ffffff;
-  --layer-srafy: #888888;
-  --layer-tzb: #cc44ff;
-  --layer-podklad: #555555;
+  /* Barvy vrstev */
+  --layer-nosne:  #e05050;
+  --layer-pricky: #5ec45e;
+  --layer-koty:   #5592d4;
+  --layer-text:   #ffffff;
+  --layer-srafy:  #9090a0;
+  --layer-tzb:    #c05ac8;
+  --layer-podklad:#666676;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

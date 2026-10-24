@@ -137,14 +137,14 @@ try {
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0d1117;
-    --surface: #161c24;
-    --surface2: #1e2730;
-    --border: #2a3a2a;
-    --accent: #c8a84b;
-    --text: #e8e8e8;
-    --text2: #8a9a8a;
-    --danger: #e05c5c;
+    --bg:      #191f14;             /* BeSix Olive Green, ztmavená ~60 %   */
+    --surface: #1d2418;             /* panel / karta                       */
+    --surface2:#242b1e;             /* input pozadí                        */
+    --border:  rgba(74,83,64,0.55);/* olivová hranice                     */
+    --accent:  #C9A84C;             /* BeSix Gold — přesná hodnota         */
+    --text:    rgba(255,255,255,0.90);
+    --text2:   rgba(255,255,255,0.50);
+    --danger:  #c05a44;             /* brandová teplá červená              */
   }
   body {
     font-family: 'Montserrat', sans-serif;
