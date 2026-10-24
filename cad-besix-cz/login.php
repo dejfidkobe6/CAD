@@ -169,19 +169,13 @@ try {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
     margin-bottom: 32px;
   }
   .logo-wrap img {
-    height: 52px;
-    /* white PNG → gold #C9A84C */
-    filter: invert(69%) sepia(45%) saturate(550%) hue-rotate(5deg) brightness(94%) contrast(92%);
-  }
-  .logo-wrap span {
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 4px;
-    color: #c9a84c;
+    width: 96px;
+    height: 96px;
+    border-radius: 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
   }
   label {
     display: block;
@@ -280,8 +274,7 @@ try {
 <body>
 <div class="login-box">
   <div class="logo-wrap">
-    <img src="/besix_logo_highres_transparent.png" alt="BeSix">
-    <span>CAD</span>
+    <img src="/icon-512.png" alt="BeSix CAD">
   </div>
   <p style="text-align:center;color:var(--text2);font-size:13px;margin-bottom:20px;">Přihlaste se svým BeSix účtem</p>
 
