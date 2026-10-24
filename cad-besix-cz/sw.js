@@ -1,4 +1,4 @@
-const CACHE = 'besix-cad-v1';
+const CACHE = 'besix-cad-v3';
 const ASSETS = [
   '/app.html',
   '/manifest.json',
