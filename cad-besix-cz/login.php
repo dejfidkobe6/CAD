@@ -172,12 +172,16 @@ try {
     gap: 8px;
     margin-bottom: 32px;
   }
-  .logo-wrap img { height: 52px; filter: brightness(1.1); }
+  .logo-wrap img {
+    height: 52px;
+    /* white PNG → gold #C9A84C */
+    filter: invert(69%) sepia(45%) saturate(550%) hue-rotate(5deg) brightness(94%) contrast(92%);
+  }
   .logo-wrap span {
     font-size: 22px;
     font-weight: 700;
     letter-spacing: 4px;
-    color: #fff;
+    color: #c9a84c;
   }
   label {
     display: block;
